@@ -1,26 +1,34 @@
 {
-  "$schema": "https://docs.openclaw.ai/schema/config.json",
-  "_comment": "원격 Ubuntu PC에 배치할 OpenClaw 설정 파일. ~/.openclaw/openclaw.json 으로 복사하세요.",
-  "agent": {
-    "model": "anthropic/claude-opus-4-5"
-  },
+  "_comment": "원격 Ubuntu PC의 OpenClaw 설정 템플릿. ~/.openclaw/openclaw.json 으로 복사하세요.",
   "agents": {
     "defaults": {
+      "model": {
+        "primary": "anthropic/claude-opus-4-5"
+      },
       "workspace": "~/.openclaw/workspace",
-      "sandbox": {
-        "mode": "non-main"
+      "maxConcurrent": 4,
+      "subagents": {
+        "maxConcurrent": 8
       }
     }
   },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto"
+  },
   "gateway": {
-    "bind": "loopback",
     "port": 18789,
+    "mode": "local",
+    "bind": "loopback",
     "auth": {
       "mode": "token"
     },
     "tailscale": {
       "mode": "off",
-      "resetOnExit": true
+      "resetOnExit": false
     }
+  },
+  "messages": {
+    "ackReactionScope": "group-mentions"
   }
 }
