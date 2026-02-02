@@ -14,7 +14,7 @@
 
 ## 지식 베이스 경로
 
-**VPS 작업 경로**: `/home/node/.openclaw/workspace/knowledge/`
+**VPS 작업 경로**: `/home/openclaw/.openclaw/workspace/knowledge/`
 **최종 목적지**: Google Drive > Obsidian Vault (n8n 자동 동기화)
 
 ## 기존 Vault 구조 (Google Drive)

@@ -183,10 +183,12 @@ curl -X POST https://mangd.app.n8n.cloud/webhook/openclaw-knowledge-sync
 
 ### 4-2. 확인 사항
 
-- [ ] VPS의 `04-Daily/*.md` → Google Drive `10. Daily Notes/11. Daily/`에 동기화
-- [ ] VPS의 `02-Entities/NVIDIA.md` → Google Drive `200. Sectors/260. Information Technology/263. Semiconductors/`에 동기화
-- [ ] VPS의 `03-Notes/*.md` → Google Drive `00. Inbox/`에 동기화
-- [ ] 텔레그램 리포트 수신 확인
+- [x] VPS의 `04-Daily/*.md` → Google Drive `10. Daily Notes/11. Daily/`에 동기화
+- [x] VPS의 `02-Entities/NVIDIA.md` → Google Drive `263. Semiconductors/` (GICS 4530 자동 라우팅)
+- [x] VPS의 `02-Entities/Anthropic.md` → Google Drive `261. Software & Services/` (GICS 4510 자동 라우팅)
+- [x] VPS의 `01-Concepts/*.md` → Google Drive `100. Research/`에 동기화
+- [x] VPS의 `templates/*.md` → Google Drive `90. Template/`에 동기화
+- [x] 텔레그램 리포트 수신 확인 (12건 동기화 완료 알림)
 
 ## 체크리스트
 
@@ -195,10 +197,11 @@ curl -X POST https://mangd.app.n8n.cloud/webhook/openclaw-knowledge-sync
 - [x] GICS 섹터 → Vault 폴더 매핑 완료
 - [x] n8n 동기화 워크플로우 작성
 - [x] Knowledge Manager 스킬 업데이트
-- [ ] n8n에 SSH 크리덴셜 생성
-- [ ] 동기화 워크플로우 n8n에 임포트 & 활성화
-- [ ] 수동 트리거로 테스트
-- [ ] GitHub Private Repo 생성 (Git 백업용)
-- [ ] VPS Git 초기화 & SSH 키 설정
-- [ ] Obsidian Git 플러그인 설정 (선택)
-- [ ] VPS 자동 커밋 크론 설정
+- [x] n8n에 SSH 크리덴셜 생성 (ID: `47cfcQNdg7UVO9gV`)
+- [x] 동기화 워크플로우 n8n에 임포트 & 활성화 (ID: `OHZzLPU9SM2dgsJp`)
+- [x] VPS Obsidian 디렉토리 구조 + 시드 문서 12개 생성
+- [x] 수동 트리거로 테스트 (12건 전체 동기화 성공, GICS 라우팅 검증 완료)
+- [ ] GitHub Private Repo 생성 (Git 백업용, 선택사항)
+- [ ] VPS Git 초기화 & SSH 키 설정 (선택사항)
+- [ ] Obsidian Git 플러그인 설정 (선택사항)
+- [ ] VPS 자동 커밋 크론 설정 (선택사항)
