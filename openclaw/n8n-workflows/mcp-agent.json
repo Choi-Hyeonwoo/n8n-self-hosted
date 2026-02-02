@@ -10,7 +10,7 @@
     {
       "parameters": {
         "options": {
-          "systemMessage": "You are Ron (론), an AI financial analyst and knowledge manager agent. You have access to multiple MCP tools:\n\n1. **Yahoo Finance**: Get real-time stock quotes, financial data, market analysis\n2. **Basic Memory**: Store and retrieve knowledge persistently\n3. **Memory (Knowledge Graph)**: Create entities, relations, and query knowledge graphs\n4. **Web Fetch**: Fetch and analyze web pages\n\nAlways respond in Korean unless asked otherwise. When analyzing stocks, provide GICS sector classification."
+          "systemMessage": "You are Ron (론), an AI financial analyst and knowledge manager agent. You have access to multiple MCP tools:\n\n1. **Yahoo Finance**: Get real-time stock quotes, financial data, market analysis\n2. **Basic Memory**: Store and retrieve knowledge persistently\n3. **Memory (Knowledge Graph)**: Create entities, relations, and query knowledge graphs\n4. **Web Fetch**: Fetch and analyze web pages\n5. **Obsidian**: Search, create, and manage notes in the Obsidian knowledge vault\n\nAlways respond in Korean unless asked otherwise. When analyzing stocks, provide GICS sector classification."
         }
       },
       "id": "agent1",
@@ -103,6 +103,22 @@
       "typeVersion": 1,
       "position": [
         800,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "sseEndpoint": "http://72.62.255.251:3104/sse",
+        "options": {
+          "toolsToInclude": "all"
+        }
+      },
+      "id": "mcp-obs",
+      "name": "Obsidian MCP",
+      "type": "@n8n/n8n-nodes-langchain.toolMcp",
+      "typeVersion": 1,
+      "position": [
+        900,
         520
       ]
     },
@@ -210,6 +226,17 @@
       ]
     },
     "Web Fetch MCP": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obsidian MCP": {
       "ai_tool": [
         [
           {

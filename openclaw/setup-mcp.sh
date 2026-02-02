@@ -19,7 +19,7 @@ pip3 install uv --break-system-packages 2>/dev/null || pip3 install uv
 
 # 3. Create MCP directory structure
 MCP_DIR="/opt/mcp-servers"
-mkdir -p "$MCP_DIR"/{yahoo-finance,memory,firecrawl}
+mkdir -p "$MCP_DIR"/{yahoo-finance,memory,firecrawl,obsidian}
 mkdir -p /var/log/mcp-servers /var/run/mcp-servers
 
 # 4. Install MCP servers (npm-based)
@@ -32,6 +32,9 @@ cd "$MCP_DIR/memory" && npm init -y > /dev/null 2>&1 && npm install @modelcontex
 echo "Installing Firecrawl MCP..."
 cd "$MCP_DIR/firecrawl" && npm init -y > /dev/null 2>&1 && npm install firecrawl-mcp
 
+echo "Installing Obsidian MCP..."
+cd "$MCP_DIR/obsidian" && npm init -y > /dev/null 2>&1 && npm install obsidian-mcp
+
 # 5. Install MCP servers (Python/uv-based)
 echo "Installing Python MCP tools..."
 export PATH="/root/.local/bin:$PATH"
@@ -39,6 +42,24 @@ uv tool install mcp-proxy
 uv tool install basic-memory
 uv tool install mcp-server-fetch
 # uv tool install telegram-mcp  # Requires TELEGRAM_API_ID and TELEGRAM_API_HASH
+
+# 5b. Setup Obsidian vault bind mount (avoid hidden dir in path)
+VAULT_SRC="/home/openclaw/.openclaw/workspace/knowledge"
+VAULT_DST="/opt/mcp-servers/obsidian-vault-data"
+mkdir -p "$VAULT_DST"
+if ! mountpoint -q "$VAULT_DST"; then
+  mount --bind "$VAULT_SRC" "$VAULT_DST"
+fi
+grep -q obsidian-vault-data /etc/fstab || \
+  echo "$VAULT_SRC $VAULT_DST none bind 0 0" >> /etc/fstab
+
+# Ensure minimal .obsidian config exists for obsidian-mcp
+mkdir -p "$VAULT_DST/.obsidian"
+[ -f "$VAULT_DST/.obsidian/app.json" ] || cat > "$VAULT_DST/.obsidian/app.json" << 'OBSEOF'
+{"alwaysUpdateLinks":true,"newFileLocation":"folder","newFileFolderPath":"03-Notes"}
+OBSEOF
+[ -f "$VAULT_DST/.obsidian/appearance.json" ] || echo '{"baseFontSize":16}' > "$VAULT_DST/.obsidian/appearance.json"
+[ -f "$VAULT_DST/.obsidian/core-plugins.json" ] || echo '["file-explorer","global-search","graph","tag-pane"]' > "$VAULT_DST/.obsidian/core-plugins.json"
 
 # 6. Deploy mcp-manager.sh
 cat > "$MCP_DIR/mcp-manager.sh" << 'MANAGER_EOF'
@@ -48,11 +69,14 @@ LOG_DIR="/var/log/mcp-servers"
 PID_DIR="/var/run/mcp-servers"
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
+VAULT_PATH="/opt/mcp-servers/obsidian-vault-data"
+
 SERVERS=(
   "yahoo-finance|3100|node /opt/mcp-servers/yahoo-finance/node_modules/yahoo-finance-mcp/build/mcp-server.js"
   "basic-memory|3101|basic-memory mcp"
   "memory|3102|node /opt/mcp-servers/memory/node_modules/@modelcontextprotocol/server-memory/dist/index.js"
   "fetch|3103|mcp-server-fetch"
+  "obsidian|3104|node /opt/mcp-servers/obsidian/node_modules/obsidian-mcp/build/main.js $VAULT_PATH"
 )
 
 start_server() {
@@ -105,7 +129,7 @@ Description=MCP Servers (via mcp-proxy)
 After=network.target
 
 [Service]
-Type=forking
+Type=oneshot
 ExecStart=/opt/mcp-servers/mcp-manager.sh start
 ExecStop=/opt/mcp-servers/mcp-manager.sh stop
 RemainAfterExit=yes
@@ -135,6 +159,7 @@ server {
     location /mcp/basic-memory/ { proxy_pass http://127.0.0.1:3101/; proxy_http_version 1.1; proxy_set_header Connection ""; proxy_buffering off; proxy_read_timeout 86400s; }
     location /mcp/memory/ { proxy_pass http://127.0.0.1:3102/; proxy_http_version 1.1; proxy_set_header Connection ""; proxy_buffering off; proxy_read_timeout 86400s; }
     location /mcp/fetch/ { proxy_pass http://127.0.0.1:3103/; proxy_http_version 1.1; proxy_set_header Connection ""; proxy_buffering off; proxy_read_timeout 86400s; }
+    location /mcp/obsidian/ { proxy_pass http://127.0.0.1:3104/; proxy_http_version 1.1; proxy_set_header Connection ""; proxy_buffering off; proxy_read_timeout 86400s; }
 }
 NGINX_EOF
 
@@ -151,8 +176,12 @@ echo "  Yahoo Finance: http://72.62.255.251:3100/sse"
 echo "  Basic Memory:  http://72.62.255.251:3101/sse"
 echo "  Memory Graph:  http://72.62.255.251:3102/sse"
 echo "  Web Fetch:     http://72.62.255.251:3103/sse"
+echo "  Obsidian:      http://72.62.255.251:3104/sse"
 echo ""
 echo "HTTPS (via nginx): https://72.62.255.251:8443/mcp/{server-name}/sse"
 echo ""
 echo "Management: /opt/mcp-servers/mcp-manager.sh {start|stop|restart|status}"
 echo "Systemd:    systemctl {start|stop|restart|status} mcp-servers"
+echo ""
+echo "NOTE: MCP Agent workflow (2u3IEwTXbPa58Tyw) requires OpenAI API credential"
+echo "      Configure in n8n Cloud UI: Settings > Credentials > OpenAI API"
