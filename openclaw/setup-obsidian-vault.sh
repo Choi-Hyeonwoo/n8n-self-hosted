@@ -38,7 +38,7 @@ echo ""
 # =============================================================================
 log_info "Creating Obsidian vault directories..."
 
-mkdir -p "$KB"/{00-MOC,01-Concepts,02-Entities,03-Notes/{tech,finance,business,devops,n8n},04-Daily,05-Weekly,06-Projects,templates,.obsidian}
+mkdir -p "$KB"/{00-MOC,01-Concepts,02-Entities,03-Notes/{tech,finance,business,devops,n8n},04-Daily,05-Weekly,06-Projects,07-Reference,templates,.obsidian}
 
 chown -R 1000:1000 "$KB"
 log_ok "Vault directories created"
@@ -404,6 +404,12 @@ aliases: ["앤트로픽"]
 tags:
   - "#type/entity"
   - "#topic/AI"
+  - "#GICS/45/4510"
+gics:
+  sector: "45 - Information Technology"
+  industry_group: "4510 - Software & Services"
+  industry: "451030 - Software"
+  sub_industry: "45103010 - Application Software"
 website: "https://anthropic.com"
 ---
 
@@ -415,6 +421,7 @@ website: "https://anthropic.com"
 ## 핵심 정보
 - **유형**: AI 연구 기업
 - **분야**: AI Safety, LLM
+- **GICS**: Information Technology > Software & Services > Software
 - **특징**: Constitutional AI, Claude 모델 시리즈
 
 ## 현우님 프로젝트와의 관계
@@ -429,6 +436,210 @@ Claude Pro를 전략적 분석 도구로 활용. OpenClaw(Gemini)과 Claude의 �
 EOF
 
 log_ok "Entity files created (OpenClaw, n8n, Anthropic)"
+
+# =============================================================================
+# 4-B. Create GICS Reference
+# =============================================================================
+log_info "Creating GICS classification reference..."
+
+cat > "$KB/07-Reference/GICS-Classification.md" <<'EOF'
+---
+type: reference
+tags:
+  - "#type/reference"
+  - "#topic/finance"
+updated: REPLACE_DATE
+---
+
+# GICS (Global Industry Classification Standard)
+
+> MSCI와 S&P Dow Jones Indices가 개발한 글로벌 산업 분류 체계.
+> 8자리 코드로 Sector → Industry Group → Industry → Sub-Industry 계층 구조.
+
+## 코드 구조
+
+```
+45  10  30  20
+|   |   |   |
+|   |   |   +-- Sub-Industry (8자리) : Application Software
+|   |   +------ Industry     (6자리) : Software
+|   +---------- Industry Group (4자리): Software & Services
++-------------- Sector        (2자리) : Information Technology
+```
+
+## 11개 Sector
+
+| 코드 | Sector | Industry Groups |
+|------|--------|:-:|
+| **10** | Energy | 1 |
+| **15** | Materials | 1 |
+| **20** | Industrials | 3 |
+| **25** | Consumer Discretionary | 4 |
+| **30** | Consumer Staples | 3 |
+| **35** | Health Care | 2 |
+| **40** | Financials | 3 |
+| **45** | Information Technology | 3 |
+| **50** | Communication Services | 2 |
+| **55** | Utilities | 1 |
+| **60** | Real Estate | 2 |
+
+**총계**: 11 Sectors → 25 Industry Groups → 74 Industries → 163 Sub-Industries
+
+## 상세 분류
+
+### 10 - Energy
+- **1010** Energy
+  - 101010 Energy Equipment & Services
+  - 101020 Oil, Gas & Consumable Fuels
+
+### 15 - Materials
+- **1510** Materials
+  - 151010 Chemicals
+  - 151020 Construction Materials
+  - 151030 Containers & Packaging
+  - 151040 Metals & Mining
+  - 151050 Paper & Forest Products
+
+### 20 - Industrials
+- **2010** Capital Goods
+  - 201010 Aerospace & Defense
+  - 201020 Building Products
+  - 201030 Construction & Engineering
+  - 201040 Electrical Equipment
+  - 201050 Industrial Conglomerates
+  - 201060 Machinery
+  - 201070 Trading Companies & Distributors
+- **2020** Commercial & Professional Services
+  - 202010 Commercial Services & Supplies
+  - 202020 Professional Services
+- **2030** Transportation
+  - 203010 Air Freight & Logistics
+  - 203020 Passenger Airlines
+  - 203030 Marine Transportation
+  - 203040 Ground Transportation
+  - 203050 Transportation Infrastructure
+
+### 25 - Consumer Discretionary
+- **2510** Automobiles & Components
+  - 251010 Automobile Components
+  - 251020 Automobiles
+- **2520** Consumer Durables & Apparel
+  - 252010 Household Durables
+  - 252020 Leisure Products
+  - 252030 Textiles, Apparel & Luxury Goods
+- **2530** Consumer Services
+  - 253010 Hotels, Restaurants & Leisure
+  - 253020 Diversified Consumer Services
+- **2550** Consumer Discretionary Distribution & Retail
+  - 255010 Distributors
+  - 255030 Broadline Retail
+  - 255040 Specialty Retail
+
+### 30 - Consumer Staples
+- **3010** Consumer Staples Distribution & Retail
+  - 301010 Consumer Staples Distribution & Retail
+- **3020** Food, Beverage & Tobacco
+  - 302010 Beverages
+  - 302020 Food Products
+  - 302030 Tobacco
+- **3030** Household & Personal Products
+  - 303010 Household Products
+  - 303020 Personal Care Products
+
+### 35 - Health Care
+- **3510** Health Care Equipment & Services
+  - 351010 Health Care Equipment & Supplies
+  - 351020 Health Care Providers & Services
+  - 351030 Health Care Technology
+- **3520** Pharmaceuticals, Biotechnology & Life Sciences
+  - 352010 Biotechnology
+  - 352020 Pharmaceuticals
+  - 352030 Life Sciences Tools & Services
+
+### 40 - Financials
+- **4010** Banks
+  - 401010 Banks
+- **4020** Financial Services
+  - 402010 Financial Services
+  - 402020 Consumer Finance
+  - 402030 Capital Markets
+  - 402040 Mortgage REITs
+- **4030** Insurance
+  - 403010 Insurance
+
+### 45 - Information Technology
+- **4510** Software & Services
+  - 451020 IT Services
+  - 451030 Software
+- **4520** Technology Hardware & Equipment
+  - 452010 Communications Equipment
+  - 452020 Technology Hardware, Storage & Peripherals
+  - 452030 Electronic Equipment, Instruments & Components
+- **4530** Semiconductors & Semiconductor Equipment
+  - 453010 Semiconductors & Semiconductor Equipment
+
+### 50 - Communication Services
+- **5010** Telecommunication Services
+  - 501010 Diversified Telecommunication Services
+  - 501020 Wireless Telecommunication Services
+- **5020** Media & Entertainment
+  - 502010 Media
+  - 502020 Entertainment
+  - 502030 Interactive Media & Services
+
+### 55 - Utilities
+- **5510** Utilities
+  - 551010 Electric Utilities
+  - 551020 Gas Utilities
+  - 551030 Multi-Utilities
+  - 551040 Water Utilities
+  - 551050 Independent Power & Renewable Electricity
+
+### 60 - Real Estate
+- **6010** Equity REITs
+  - 601010 Diversified REITs
+  - 601025 Industrial REITs
+  - 601030 Hotel & Resort REITs
+  - 601040 Office REITs
+  - 601050 Health Care REITs
+  - 601060 Residential REITs
+  - 601070 Retail REITs
+  - 601080 Specialized REITs
+- **6020** Real Estate Management & Development
+  - 602010 Real Estate Management & Development
+
+## Vault에서의 활용
+
+### 태그 규칙
+- 기업 Entity 문서: `#GICS/{sector}/{industry_group}` 형태
+- 예: `#GICS/45/4530` (NVIDIA - Semiconductors)
+- 예: `#GICS/45/4510` (Anthropic - Software & Services)
+- 예: `#GICS/50/5020` (Google - Media & Entertainment)
+
+### Frontmatter 규칙
+```yaml
+gics:
+  sector: "45 - Information Technology"
+  industry_group: "4530 - Semiconductors & Semiconductor Equipment"
+  industry: "453010 - Semiconductors & Semiconductor Equipment"
+  sub_industry: "45301020 - Semiconductors"
+```
+
+### 관심 섹터 (현우님 프로젝트 기준)
+1. **45 - IT**: AI 기업, 소프트웨어, 반도체 (핵심)
+2. **50 - Communication Services**: 미디어, 엔터테인먼트, 인터랙티브
+3. **40 - Financials**: 핀테크, 결제, 자산관리
+4. **35 - Health Care**: 헬스테크, 바이오
+5. **25 - Consumer Discretionary**: 이커머스, 자동차
+
+## 참고
+- MSCI GICS 공식: https://www.msci.com/indexes/index-resources/gics
+- S&P Global: https://www.spglobal.com/spdji/en/landing/topic/gics/
+- 최종 업데이트: 2023년 3월 (v12)
+EOF
+
+sed -i "s/REPLACE_DATE/$TODAY/g" "$KB/07-Reference/GICS-Classification.md"
+log_ok "GICS classification reference created"
 
 # =============================================================================
 # 5. Seed Project Files
@@ -789,6 +1000,7 @@ echo -e "    03-Notes/        - tech/, finance/, business/, devops/, n8n/"
 echo -e "    04-Daily/        - $TODAY.md"
 echo -e "    05-Weekly/       - (ready)"
 echo -e "    06-Projects/     - OpenClaw-VPS-Setup, N8N-Automation"
+echo -e "    07-Reference/    - GICS-Classification (산업 분류 코드표)"
 echo -e "    templates/       - note, concept, entity, daily"
 echo -e "    .obsidian/       - graph.json (color-coded by type)"
 echo ""

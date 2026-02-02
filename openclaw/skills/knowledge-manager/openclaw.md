@@ -48,6 +48,8 @@ knowledge/
 ├── 06-Projects/               # 프로젝트별 지식
 │   ├── OpenClaw-VPS-Setup.md
 │   └── N8N-Automation.md
+├── 07-Reference/              # 참조 자료 (GICS 등)
+│   └── GICS-Classification.md
 ├── templates/                 # 문서 템플릿
 │   ├── note-template.md
 │   ├── concept-template.md
@@ -83,6 +85,48 @@ knowledge/
 #status/seed     #status/growing  #status/evergreen
 #relevance/high  #relevance/medium  #relevance/low
 ```
+
+### GICS 산업 분류 태그 (기업 엔티티 전용)
+
+기업(Entity) 문서에는 GICS(Global Industry Classification Standard) 태그를 부여한다.
+8자리 코드 체계: Sector(2) → Industry Group(4) → Industry(6) → Sub-Industry(8)
+
+```
+#GICS/10          # Energy
+#GICS/15          # Materials
+#GICS/20          # Industrials
+#GICS/25          # Consumer Discretionary
+#GICS/30          # Consumer Staples
+#GICS/35          # Health Care
+#GICS/40          # Financials
+#GICS/45          # Information Technology
+#GICS/45/4510     # Software & Services
+#GICS/45/4520     # Technology Hardware & Equipment
+#GICS/45/4530     # Semiconductors
+#GICS/50          # Communication Services
+#GICS/55          # Utilities
+#GICS/60          # Real Estate
+```
+
+**기업 Entity 문서에서 GICS 사용 예시:**
+```yaml
+# NVIDIA 문서의 frontmatter
+gics:
+  sector: "45 - Information Technology"
+  industry_group: "4530 - Semiconductors & Semiconductor Equipment"
+  industry: "453010 - Semiconductors & Semiconductor Equipment"
+  sub_industry: "45301020 - Semiconductors"
+tags:
+  - "#type/entity"
+  - "#GICS/45/4530"
+```
+
+**GICS 분류 규칙:**
+1. 모든 기업 Entity에 `gics:` frontmatter 필수
+2. 태그는 Sector + Industry Group 수준까지만 (깊이 2)
+3. 상세 코드는 frontmatter에 기록
+4. 분류가 불확실한 경우 주요 매출원 기준으로 판단
+5. GICS 전체 코드표는 `07-Reference/GICS-Classification.md` 참조
 
 ## 문서 템플릿
 
@@ -163,6 +207,12 @@ aliases: ["{{별칭}}"]
 tags:
   - "#type/entity"
   - "#topic/{{category}}"
+  - "#GICS/{{sector_code}}/{{industry_group_code}}"
+gics:
+  sector: "{{sector_code}} - {{sector_name}}"
+  industry_group: "{{ig_code}} - {{ig_name}}"
+  industry: "{{ind_code}} - {{ind_name}}"
+  sub_industry: "{{sub_code}} - {{sub_name}}"
 website: "{{url}}"
 ---
 
@@ -174,6 +224,7 @@ website: "{{url}}"
 ## 핵심 정보
 - **유형**: {{company/tool/person}}
 - **분야**: {{분야}}
+- **GICS**: {{sector_name}} > {{ig_name}} > {{ind_name}}
 - **특징**: {{핵심 특징}}
 
 ## 현우님 프로젝트와의 관계
@@ -182,9 +233,16 @@ website: "{{url}}"
 ## 관련 개념
 - [[{{Concept1}}]]
 
+## 같은 GICS 섹터
+- [[{{같은_섹터_기업1}}]]
+- [[{{같은_섹터_기업2}}]]
+
 ## 최신 동향
 - {{날짜}}: {{최신 정보}}
 ```
+
+> **GICS 분류 참고**: entity_type이 `company`인 경우에만 GICS 태그와 frontmatter를 추가한다.
+> `tool`, `person`, `project` 타입은 GICS 생략 가능.
 
 ### 일일 로그 (Daily)
 ```markdown
