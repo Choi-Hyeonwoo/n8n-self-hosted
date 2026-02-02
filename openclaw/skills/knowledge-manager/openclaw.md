@@ -14,63 +14,43 @@
 
 ## 지식 베이스 경로
 
-**VPS 작업 경로**: `/home/openclaw/.openclaw/workspace/knowledge/`
+**통합 경로** (bind mount로 아래 두 경로는 동일한 물리 디렉토리):
+- **VPS 호스트**: `/home/openclaw/.openclaw/workspace/knowledge/`
+- **Obsidian MCP**: `/opt/mcp-servers/obsidian-vault-data/` (bind mount)
+- **컨테이너 내부**: `/home/node/.openclaw/workspace/knowledge/`
+
 **최종 목적지**: Google Drive > Obsidian Vault (n8n 자동 동기화)
 
-## 기존 Vault 구조 (Google Drive)
-
-현우님의 기존 Obsidian Vault는 이미 GICS 기반 섹터 분류 체계를 갖추고 있습니다.
+## Vault 폴더 구조
 
 ```
-Obsidian/                              # Google Drive Root
-├── 00. Inbox/                         # 일반 노트, 메모
-│   ├── 05. Telegram/                  # 텔레그램 저장
-│   └── 07. Clippings/                 # 웹 클리핑
-├── 050. Book/                         # 도서 노트
-│   └── 51. 도서 목록/
-├── 10. Daily Notes/                   # 일일/주간 기록
-│   ├── 11. Daily/                     # 일일 로그
-│   └── 12. Weekly/                    # 주간 리포트
-├── 100. Research/                     # 리서치/개념 문서
-│   ├── 110. Asset Class/              # 자산군별 리서치
-│   ├── 120. Strategy/                 # 투자 전략
-│   └── 130. Geographic/               # 지역별 리서치
-├── 200. Sectors/                      # ★ GICS 기반 섹터 분류
-│   ├── 210. Energy/                   # GICS 10
-│   ├── 220. Industrials/              # GICS 20
-│   ├── 225. Materials/                # GICS 15
-│   ├── 230. Consumer/                 # GICS 25+30 (Discretionary + Staples)
-│   ├── 240. Health Care/              # GICS 35
-│   ├── 250. Financials/               # GICS 40
-│   ├── 260. Information Technology/   # GICS 45
-│   │   ├── 261. Software & Services/  # GICS 4510
-│   │   ├── 262. Technology Hardware/  # GICS 4520
-│   │   └── 263. Semiconductors/       # GICS 4530
-│   ├── 270. Communication Services/   # GICS 50
-│   ├── 280. Utilities/                # GICS 55
-│   └── 290. Real Estate/              # GICS 60
-├── 90. Template/                      # 문서 템플릿
-├── 99. Attachment/                    # 첨부파일
-├── Clippings/                         # 클리핑 (Readwise 등)
-├── Guides/                            # 가이드 문서
-└── .obsidian/                         # 옵시디언 설정
+knowledge/                             # 통합 Vault Root
+├── 00-Inbox/                          # 빠른 메모, 미분류 노트
+├── 01-Daily/                          # 일일 마켓 노트 (YYYY-MM-DD.md)
+├── 02-Research/                       # 심층 분석
+│   ├── Stocks/                        # 개별 종목 (NVIDIA.md 등)
+│   ├── Sectors/                       # GICS 섹터 분석
+│   └── Macro/                         # 금리, 환율, 경제지표
+├── 03-Portfolio/                      # 포트폴리오 추적
+├── 04-Knowledge/                      # 영구 지식
+│   ├── Concepts/                      # 개념/용어 (GICS, 밸류에이션 등)
+│   └── Strategies/                    # 투자 전략, 매매 규칙
+├── 05-Templates/                      # 노트 템플릿
+├── 06-Archive/                        # 보관함
+└── Home.md                            # Vault 인덱스
 ```
 
-## VPS → Vault 폴더 매핑
+## VPS → Google Drive 동기화 매핑
 
-Ron이 VPS에서 생성하는 파일이 Google Drive Vault의 어느 폴더로 동기화되는지:
-
-| VPS 경로 | → Vault 경로 | 설명 |
-|-----------|-------------|------|
-| `00-MOC/` | Vault Root (`/`) | MOC 파일은 루트 레벨 |
-| `01-Concepts/` | `100. Research/` | 핵심 개념 → 리서치 폴더 |
-| `02-Entities/` | `200. Sectors/{GICS}/` | 기업 → GICS 섹터별 자동 분류 |
-| `03-Notes/` | `00. Inbox/` | 일반 노트 → 인박스 |
-| `04-Daily/` | `10. Daily Notes/11. Daily/` | 일일 로그 |
-| `05-Weekly/` | `10. Daily Notes/12. Weekly/` | 주간 리포트 |
-| `06-Projects/` | Vault Root (`/`) | 프로젝트 문서 |
-| `07-Reference/` | `100. Research/` | 참조 자료 → 리서치 |
-| `templates/` | `90. Template/` | 문서 템플릿 |
+| VPS 폴더 | → Google Drive 경로 | 설명 |
+|-----------|---------------------|------|
+| `00-Inbox/` | `00. Inbox/` | 미분류 노트 |
+| `01-Daily/` | `10. Daily Notes/11. Daily/` | 일일 마켓 로그 |
+| `02-Research/Stocks/` | `200. Sectors/{GICS}/` | 종목 → GICS 자동 라우팅 |
+| `02-Research/Sectors/` | `200. Sectors/` | 섹터 분석 |
+| `02-Research/Macro/` | `100. Research/` | 매크로 리서치 |
+| `04-Knowledge/` | `100. Research/` | 개념/전략 |
+| `05-Templates/` | `90. Template/` | 문서 템플릿 |
 
 ### GICS → Vault 섹터 매핑 (기업 Entity 자동 라우팅)
 
@@ -347,51 +327,39 @@ updated: {{date}}
 
 1. **카테고리 분석**: `tech` → `#topic/AI`
 2. **개념 추출**: "AI 에이전트" → [[AI-Agent]] 개념 문서 확인
-   - 없으면 → `01-Concepts/AI-Agent.md` 생성 → Google Drive `100. Research/`에 동기화
-3. **노트 생성**: `03-Notes/tech/2026-02-02_AI-에이전트의-미래.md`
+   - 없으면 → `04-Knowledge/Concepts/AI-Agent.md` 생성
+3. **노트 생성**: `00-Inbox/2026-02-02_AI-에이전트의-미래.md`
    - YAML frontmatter 자동 생성
    - [[AI-Agent]] 위키링크 자동 삽입
-   - [[MOC-Tech]] 참조 추가
    - → Google Drive `00. Inbox/`에 동기화
-4. **MOC 업데이트**: `00-MOC/MOC-Tech.md`에 새 노트 링크 추가 → Vault Root에 동기화
-5. **일일 로그 업데이트**: `04-Daily/2026-02-02.md`에 학습 기록 추가 → `10. Daily Notes/11. Daily/`에 동기화
+4. **일일 로그 업데이트**: `01-Daily/2026-02-02.md`에 학습 기록 추가
 
 ### /save entity 처리 (기업 문서)
 
 사용자가 `/save entity NVIDIA`를 보내면:
 1. **GICS 분류**: NVIDIA → GICS 45 (IT) → 4530 (Semiconductors)
-2. **Entity 생성**: `02-Entities/NVIDIA.md`
-3. **자동 라우팅**: GICS 4530 → `200. Sectors/260. Information Technology/263. Semiconductors/`에 동기화
-4. **섹터 내 같은 기업 링크**: 같은 `263. Semiconductors/` 내 기업들과 `[[링크]]` 연결
+2. **Entity 생성**: `02-Research/Stocks/NVIDIA.md`
+3. **자동 라우팅**: GICS 4530 → Google Drive `200. Sectors/260. Information Technology/263. Semiconductors/`에 동기화
+4. **섹터 내 같은 기업 링크**: 같은 섹터 기업들과 `[[링크]]` 연결
 
 ## 동기화 전략 (VPS → Google Drive Vault)
 
-### 이중 동기화 체계
+### 동기화 체계
 ```
-VPS knowledge/                        Google Drive Obsidian/
-├── 생성/수정 감지                    ├── 00. Inbox/
-│                                     ├── 10. Daily Notes/
-├─── n8n 워크플로우 ──────────────→  ├── 100. Research/
-│    (폴더 매핑 + GICS 라우팅)       ├── 200. Sectors/{GICS}/
-│                                     └── ...
-├─── Git push ──→ GitHub ──→ Obsidian Git 플러그인 ──→ 로컬 Mac
+VPS knowledge/ (= obsidian-vault-data/)
+├── Obsidian MCP (port 3104) ←→ 직접 읽기/쓰기
+├── n8n 워크플로우 ──→ Google Drive Obsidian/
+│   (03:00, 15:00 자동 / 웹훅 수동)
+│   (폴더 매핑 + GICS 라우팅)
+└── OpenClaw 컨테이너 ←→ 직접 읽기/쓰기 (/home/node/.openclaw/workspace/knowledge/)
 ```
 
-### 방법 1: n8n Google Drive 직접 동기화 (Primary)
+### n8n Google Drive 동기화 (Primary)
 - 매일 03:00, 15:00 자동 실행
-- VPS에서 변경된 .md 파일 감지 (timestamp + git diff)
+- VPS에서 변경된 .md 파일 감지 (timestamp)
 - 폴더 매핑 테이블에 따라 정확한 Google Drive 폴더에 업로드
 - 기업 Entity는 GICS 코드로 자동 라우팅
 - 텔레그램 리포트 알림
-
-### 방법 2: Git 자동 동기화 (Backup)
-```bash
-cd /home/openclaw/.openclaw/workspace/knowledge
-git add -A
-git commit -m "knowledge update $(date +%Y-%m-%d-%H%M)" 2>/dev/null
-git push origin main 2>/dev/null
-```
-→ GitHub Private Repo → Obsidian Git 플러그인으로 로컬 Mac에서도 접근 가능
 
 ## 그래프 최적화
 

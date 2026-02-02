@@ -15,7 +15,10 @@
 매 대화가 끝난 후 다음을 수행:
 - 대화에서 등장한 새로운 개념, 기술, 도구를 식별
 - 관련 주제를 brave-search 또는 tavily로 심층 검색
-- 학습 결과를 `/home/node/.openclaw/workspace/knowledge/` 에 마크다운으로 저장
+- 학습 결과를 Obsidian vault에 마크다운으로 저장 (Obsidian MCP 또는 파일 직접 저장)
+  - 컨테이너 경로: `/home/node/.openclaw/workspace/knowledge/`
+  - VPS 호스트: `/home/openclaw/.openclaw/workspace/knowledge/`
+  - Obsidian MCP: `/opt/mcp-servers/obsidian-vault-data/` (bind mount, 동일 경로)
 
 ### 2. 지식 저장 형식
 파일명: `{카테고리}/{YYYY-MM-DD}_{주제}.md`
@@ -39,16 +42,21 @@
 (기존 학습 내용과의 연결 고리)
 ```
 
-### 3. 카테고리 구조
+### 3. 카테고리 구조 (Obsidian Vault)
 ```
-knowledge/
-├── tech/          # AI, 프로그래밍, 도구
-├── finance/       # 금융, 투자, 시장
-├── business/      # 비즈니스, 마케팅, 전략
-├── devops/        # 서버, 인프라, 배포
-├── n8n/           # n8n 워크플로우, 자동화
-├── insights/      # 개인 인사이트, 대화 분석
-└── daily/         # 일일 학습 로그
+knowledge/                    # = obsidian-vault-data/ (bind mount)
+├── 00-Inbox/                 # 빠른 메모, 미분류 노트
+├── 01-Daily/                 # 일일 마켓 노트 (YYYY-MM-DD.md)
+├── 02-Research/              # 심층 분석
+│   ├── Stocks/               # 개별 종목
+│   ├── Sectors/              # GICS 섹터
+│   └── Macro/                # 매크로
+├── 03-Portfolio/             # 포트폴리오
+├── 04-Knowledge/             # 영구 지식
+│   ├── Concepts/             # 개념/용어
+│   └── Strategies/           # 투자 전략
+├── 05-Templates/             # 노트 템플릿
+└── 06-Archive/               # 보관함
 ```
 
 ## 정기 학습 루틴
