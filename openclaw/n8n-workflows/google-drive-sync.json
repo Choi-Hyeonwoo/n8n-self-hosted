@@ -23,79 +23,75 @@
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "knowledge-sync",
+        "path": "openclaw-knowledge-sync",
         "options": {}
       },
       "id": "webhook-trigger",
       "name": "Manual Trigger Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 550]
+      "position": [0, 550],
+      "webhookId": "openclaw-knowledge-sync"
     },
     {
-      "parameters": {
-        "url": "=https://mangd.app.n8n.cloud/webhook/knowledge-sync",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\"source\": \"schedule\", \"timestamp\": \"{{ $now.toISO() }}\"}"
-      },
-      "id": "dummy-pass",
-      "name": "Pass Through",
+      "parameters": {},
+      "id": "noop-merge",
+      "name": "Merge Triggers",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [250, 400]
     },
     {
       "parameters": {
-        "jsCode": "// Configure your VPS SSH connection details\n// This node generates the list of changed files from the VPS knowledge repo\n\nconst config = {\n  knowledgePath: '/home/openclaw/.openclaw/workspace/knowledge',\n  // Google Drive folder ID where vault is stored\n  googleDriveFolderId: '{{GOOGLE_DRIVE_FOLDER_ID}}',\n  // Vault folder structure mapping\n  folders: [\n    '00-MOC',\n    '01-Concepts',\n    '02-Entities',\n    '03-Notes/tech',\n    '03-Notes/finance',\n    '03-Notes/business',\n    '03-Notes/devops',\n    '03-Notes/n8n',\n    '04-Daily',\n    '05-Weekly',\n    '06-Projects',\n    '07-Reference',\n    'templates'\n  ]\n};\n\n// Pass config to next nodes\nreturn [{\n  json: {\n    config,\n    syncType: $input.first().json.source || 'manual',\n    timestamp: new Date().toISOString()\n  }\n}];"
+        "jsCode": "// Obsidian Vault 폴더 구조 → Google Drive 폴더 ID 매핑\n// 기존 '지식사랑방' 워크플로우와 같은 Google Drive account 사용\n//\n// ★ 처음 실행 전: Google Drive에 'OpenClaw-Vault' 폴더를 만들고\n//   하위에 아래 폴더들을 만든 뒤 ID를 입력하세요.\n//   (폴더 URL에서 folders/ 뒤의 문자열이 ID)\n\nconst VAULT_DRIVE_ROOT = 'REPLACE_WITH_ROOT_FOLDER_ID';\n\nconst FOLDER_MAP = {\n  '00-MOC':             'REPLACE_WITH_FOLDER_ID',\n  '01-Concepts':        'REPLACE_WITH_FOLDER_ID',\n  '02-Entities':        'REPLACE_WITH_FOLDER_ID',\n  '03-Notes':           'REPLACE_WITH_FOLDER_ID',\n  '04-Daily':           'REPLACE_WITH_FOLDER_ID',\n  '05-Weekly':          'REPLACE_WITH_FOLDER_ID',\n  '06-Projects':        'REPLACE_WITH_FOLDER_ID',\n  '07-Reference':       'REPLACE_WITH_FOLDER_ID',\n  'templates':          'REPLACE_WITH_FOLDER_ID'\n};\n\nreturn [{\n  json: {\n    vaultDriveRoot: VAULT_DRIVE_ROOT,\n    folderMap: FOLDER_MAP,\n    knowledgePath: '/home/openclaw/.openclaw/workspace/knowledge',\n    timestamp: new Date().toISOString()\n  }\n}];"
       },
       "id": "sync-config",
-      "name": "Sync Config",
+      "name": "Vault → Drive 매핑 설정",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [450, 400]
     },
     {
       "parameters": {
-        "command": "=cd /home/openclaw/.openclaw/workspace/knowledge && git log --diff-filter=ACMR --name-only --pretty=format:'' -1 HEAD | grep '.md$' | head -50"
-      },
-      "id": "get-changed-files",
-      "name": "Get Changed Files (SSH)",
-      "type": "n8n-nodes-base.ssh",
-      "typeVersion": 1,
-      "position": [650, 300],
-      "credentials": {
-        "sshPassword": {
-          "id": "{{SSH_CREDENTIAL_ID}}",
-          "name": "VPS SSH"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "command": "=cd /home/openclaw/.openclaw/workspace/knowledge && find . -name '*.md' -newer /tmp/last-gdrive-sync 2>/dev/null | sed 's|^\\./||' | head -100; touch /tmp/last-gdrive-sync"
+        "command": "=cd /home/openclaw/.openclaw/workspace/knowledge && find . -name '*.md' -newer /tmp/.openclaw-gdrive-sync 2>/dev/null | sed 's|^\\./||' | head -100; touch /tmp/.openclaw-gdrive-sync"
       },
       "id": "get-modified-files",
-      "name": "Get Modified Files (SSH)",
+      "name": "변경된 파일 목록 (SSH)",
       "type": "n8n-nodes-base.ssh",
       "typeVersion": 1,
-      "position": [650, 500],
+      "position": [700, 300],
       "credentials": {
         "sshPassword": {
-          "id": "{{SSH_CREDENTIAL_ID}}",
-          "name": "VPS SSH"
+          "id": "REPLACE_WITH_SSH_CREDENTIAL_ID",
+          "name": "Hostinger VPS"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "// Combine and deduplicate file lists from both methods\nconst gitFiles = ($('Get Changed Files (SSH)').first().json.stdout || '').split('\\n').filter(f => f.trim());\nconst modifiedFiles = ($('Get Modified Files (SSH)').first().json.stdout || '').split('\\n').filter(f => f.trim());\n\nconst allFiles = [...new Set([...gitFiles, ...modifiedFiles])].filter(f => f.endsWith('.md'));\n\nif (allFiles.length === 0) {\n  return [{ json: { status: 'no_changes', message: 'No files to sync', count: 0 } }];\n}\n\n// Return each file as a separate item for parallel processing\nreturn allFiles.map(filePath => ({\n  json: {\n    filePath,\n    folder: filePath.split('/').slice(0, -1).join('/'),\n    fileName: filePath.split('/').pop(),\n    fullPath: `/home/openclaw/.openclaw/workspace/knowledge/${filePath}`\n  }\n}));"
+        "command": "=cd /home/openclaw/.openclaw/workspace/knowledge && git diff --name-only HEAD~1 HEAD 2>/dev/null | grep '.md$' | head -50"
       },
-      "id": "merge-file-lists",
-      "name": "Merge & Deduplicate",
+      "id": "get-git-changed",
+      "name": "Git 변경 파일 (SSH)",
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [700, 500],
+      "credentials": {
+        "sshPassword": {
+          "id": "REPLACE_WITH_SSH_CREDENTIAL_ID",
+          "name": "Hostinger VPS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 두 방법의 결과를 합치고 중복 제거\nconst config = $('Vault → Drive 매핑 설정').first().json;\nconst modifiedFiles = ($('변경된 파일 목록 (SSH)').first().json.stdout || '').split('\\n').filter(f => f.trim());\nconst gitFiles = ($('Git 변경 파일 (SSH)').first().json.stdout || '').split('\\n').filter(f => f.trim());\n\nconst allFiles = [...new Set([...modifiedFiles, ...gitFiles])].filter(f => f.endsWith('.md'));\n\nif (allFiles.length === 0) {\n  return [{ json: { status: 'no_changes', message: '변경된 파일 없음', count: 0 } }];\n}\n\n// 각 파일을 개별 아이템으로 반환 (병렬 처리)\nreturn allFiles.map(filePath => {\n  // 폴더 매핑: '03-Notes/tech/file.md' → '03-Notes'\n  const topFolder = filePath.split('/')[0];\n  const targetFolderId = config.folderMap[topFolder] || config.vaultDriveRoot;\n  \n  return {\n    json: {\n      filePath,\n      topFolder,\n      fileName: filePath.split('/').pop(),\n      fullPath: `${config.knowledgePath}/${filePath}`,\n      targetFolderId\n    }\n  };\n});"
+      },
+      "id": "merge-dedup",
+      "name": "합치기 & 중복제거",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 400]
+      "position": [950, 400]
     },
     {
       "parameters": {
@@ -103,7 +99,7 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "strict"
+            "typeValidation": "loose"
           },
           "conditions": [
             {
@@ -117,60 +113,77 @@
             }
           ],
           "combinator": "and"
-        }
+        },
+        "options": {}
       },
       "id": "has-changes",
-      "name": "Has Changes?",
+      "name": "변경사항 있음?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [1100, 400]
+      "position": [1150, 400]
     },
     {
       "parameters": {
-        "command": "=cat {{ $json.fullPath }}"
+        "command": "=cat '{{ $json.fullPath }}'"
       },
-      "id": "read-file-content",
-      "name": "Read File Content (SSH)",
+      "id": "read-file",
+      "name": "파일 내용 읽기 (SSH)",
       "type": "n8n-nodes-base.ssh",
       "typeVersion": 1,
-      "position": [1300, 300],
+      "position": [1350, 300],
       "credentials": {
         "sshPassword": {
-          "id": "{{SSH_CREDENTIAL_ID}}",
-          "name": "VPS SSH"
+          "id": "REPLACE_WITH_SSH_CREDENTIAL_ID",
+          "name": "Hostinger VPS"
         }
       }
     },
     {
       "parameters": {
-        "name": "={{ $('Merge & Deduplicate').item.json.fileName }}",
-        "driveId": "My Drive",
-        "folderId": "={{ $('Sync Config').first().json.config.googleDriveFolderId }}",
-        "options": {
-          "updateIfExists": true
-        }
+        "jsCode": "// SSH로 읽은 텍스트를 바이너리(MD 파일)로 변환\nconst fileData = $('합치기 & 중복제거').item.json;\nconst content = $input.first().json.stdout || '';\nconst fileName = fileData.fileName;\n\nconst base64Content = Buffer.from(content, 'utf-8').toString('base64');\n\nreturn {\n  json: {\n    ...fileData,\n    contentLength: content.length\n  },\n  binary: {\n    data: {\n      data: base64Content,\n      mimeType: 'text/markdown',\n      fileName: fileName\n    }\n  }\n};"
       },
-      "id": "upload-to-gdrive",
-      "name": "Upload to Google Drive",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
-      "position": [1500, 300],
-      "credentials": {
-        "googleDriveOAuth2Api": {
-          "id": "{{GDRIVE_CREDENTIAL_ID}}",
-          "name": "Google Drive"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// Build sync summary report\nconst items = $input.all();\nconst syncedCount = items.length;\nconst now = new Date().toLocaleString('ko-KR', {timeZone: 'Asia/Seoul'});\n\nconst fileList = items.map(item => {\n  const name = item.json.name || item.json.fileName || 'unknown';\n  return `  • ${name}`;\n}).join('\\n');\n\nconst report = `📁 Knowledge Sync Report\\n` +\n  `━━━━━━━━━━━━━━━━━━━━━━━━\\n` +\n  `시간: ${now}\\n` +\n  `동기화 파일: ${syncedCount}건\\n\\n` +\n  `파일 목록:\\n${fileList}\\n\\n` +\n  `✅ Google Drive 동기화 완료`;\n\nreturn [{ json: { report, syncedCount, timestamp: now } }];"
-      },
-      "id": "build-sync-report",
-      "name": "Build Sync Report",
+      "id": "to-binary",
+      "name": "텍스트→MD 바이너리",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1700, 300]
+      "position": [1550, 300]
+    },
+    {
+      "parameters": {
+        "name": "={{ $json.fileName }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $json.targetFolderId }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "upload-gdrive",
+      "name": "Google Drive 업로드",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1750, 300],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "br5pnMr0ZdYx9LuJ",
+          "name": "Google Drive account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 동기화 리포트 생성\nconst items = $input.all();\nconst syncedCount = items.length;\nconst now = new Date().toLocaleString('ko-KR', {timeZone: 'Asia/Seoul'});\n\nconst fileList = items.map(item => {\n  const name = item.json.fileName || item.json.name || 'unknown';\n  const folder = item.json.topFolder || '';\n  return `  ${folder}/${name}`;\n}).join('\\n');\n\nconst report = [\n  '\\ud83d\\udcc1 OpenClaw Knowledge Sync',\n  '\\u2501'.repeat(24),\n  `\\u23f0 ${now}`,\n  `\\ud83d\\udcc4 ${syncedCount}\\uac74 \\ub3d9\\uae30\\ud654 \\uc644\\ub8cc`,\n  '',\n  fileList,\n  '',\n  '\\u2705 Google Drive \\uc5c5\\ub85c\\ub4dc \\uc644\\ub8cc'\n].join('\\n');\n\nreturn [{ json: { report, syncedCount, timestamp: now } }];"
+      },
+      "id": "build-report",
+      "name": "동기화 리포트 생성",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1950, 300]
     },
     {
       "parameters": {
@@ -181,80 +194,85 @@
         "jsonBody": "={{ JSON.stringify({ chat_id: '492860021', text: $json.report }) }}"
       },
       "id": "telegram-notify",
-      "name": "Notify Telegram",
+      "name": "텔레그램 알림",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1900, 300]
+      "position": [2150, 300]
     },
     {
       "parameters": {
-        "jsCode": "return [{ json: { status: 'skipped', message: 'No changes detected, sync skipped' } }];"
+        "jsCode": "return [{ json: { status: 'skipped', message: '변경된 파일 없음, 동기화 생략' } }];"
       },
-      "id": "no-changes",
-      "name": "No Changes",
+      "id": "no-changes-node",
+      "name": "변경 없음",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1300, 550]
+      "position": [1350, 550]
     }
   ],
   "connections": {
     "Sync Schedule": {
       "main": [
-        [{"node": "Pass Through", "type": "main", "index": 0}]
+        [{"node": "Merge Triggers", "type": "main", "index": 0}]
       ]
     },
     "Manual Trigger Webhook": {
       "main": [
-        [{"node": "Pass Through", "type": "main", "index": 0}]
+        [{"node": "Merge Triggers", "type": "main", "index": 0}]
       ]
     },
-    "Pass Through": {
+    "Merge Triggers": {
       "main": [
-        [{"node": "Sync Config", "type": "main", "index": 0}]
+        [{"node": "Vault → Drive 매핑 설정", "type": "main", "index": 0}]
       ]
     },
-    "Sync Config": {
+    "Vault → Drive 매핑 설정": {
       "main": [
         [
-          {"node": "Get Changed Files (SSH)", "type": "main", "index": 0},
-          {"node": "Get Modified Files (SSH)", "type": "main", "index": 0}
+          {"node": "변경된 파일 목록 (SSH)", "type": "main", "index": 0},
+          {"node": "Git 변경 파일 (SSH)", "type": "main", "index": 0}
         ]
       ]
     },
-    "Get Changed Files (SSH)": {
+    "변경된 파일 목록 (SSH)": {
       "main": [
-        [{"node": "Merge & Deduplicate", "type": "main", "index": 0}]
+        [{"node": "합치기 & 중복제거", "type": "main", "index": 0}]
       ]
     },
-    "Get Modified Files (SSH)": {
+    "Git 변경 파일 (SSH)": {
       "main": [
-        [{"node": "Merge & Deduplicate", "type": "main", "index": 0}]
+        [{"node": "합치기 & 중복제거", "type": "main", "index": 0}]
       ]
     },
-    "Merge & Deduplicate": {
+    "합치기 & 중복제거": {
       "main": [
-        [{"node": "Has Changes?", "type": "main", "index": 0}]
+        [{"node": "변경사항 있음?", "type": "main", "index": 0}]
       ]
     },
-    "Has Changes?": {
+    "변경사항 있음?": {
       "main": [
-        [{"node": "Read File Content (SSH)", "type": "main", "index": 0}],
-        [{"node": "No Changes", "type": "main", "index": 0}]
+        [{"node": "파일 내용 읽기 (SSH)", "type": "main", "index": 0}],
+        [{"node": "변경 없음", "type": "main", "index": 0}]
       ]
     },
-    "Read File Content (SSH)": {
+    "파일 내용 읽기 (SSH)": {
       "main": [
-        [{"node": "Upload to Google Drive", "type": "main", "index": 0}]
+        [{"node": "텍스트→MD 바이너리", "type": "main", "index": 0}]
       ]
     },
-    "Upload to Google Drive": {
+    "텍스트→MD 바이너리": {
       "main": [
-        [{"node": "Build Sync Report", "type": "main", "index": 0}]
+        [{"node": "Google Drive 업로드", "type": "main", "index": 0}]
       ]
     },
-    "Build Sync Report": {
+    "Google Drive 업로드": {
       "main": [
-        [{"node": "Notify Telegram", "type": "main", "index": 0}]
+        [{"node": "동기화 리포트 생성", "type": "main", "index": 0}]
+      ]
+    },
+    "동기화 리포트 생성": {
+      "main": [
+        [{"node": "텔레그램 알림", "type": "main", "index": 0}]
       ]
     }
   },
