@@ -1,0 +1,289 @@
+{
+  "updatedAt": "2026-02-02T08:35:38.513Z",
+  "createdAt": "2026-02-02T08:35:38.513Z",
+  "id": "2u3IEwTXbPa58Tyw",
+  "name": "OpenClaw MCP Agent",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "You are Ron (론), an AI financial analyst and knowledge manager agent. You have access to multiple MCP tools:\n\n1. **Yahoo Finance**: Get real-time stock quotes, financial data, market analysis\n2. **Basic Memory**: Store and retrieve knowledge persistently\n3. **Memory (Knowledge Graph)**: Create entities, relations, and query knowledge graphs\n4. **Web Fetch**: Fetch and analyze web pages\n\nAlways respond in Korean unless asked otherwise. When analyzing stocks, provide GICS sector classification."
+        }
+      },
+      "id": "agent1",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {}
+      },
+      "id": "llm1",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        600,
+        520
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sseEndpoint": "http://72.62.255.251:3100/sse",
+        "options": {
+          "toolsToInclude": "all"
+        }
+      },
+      "id": "mcp-yf",
+      "name": "Yahoo Finance MCP",
+      "type": "@n8n/n8n-nodes-langchain.toolMcp",
+      "typeVersion": 1,
+      "position": [
+        400,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "sseEndpoint": "http://72.62.255.251:3101/sse",
+        "options": {
+          "toolsToInclude": "all"
+        }
+      },
+      "id": "mcp-bm",
+      "name": "Basic Memory MCP",
+      "type": "@n8n/n8n-nodes-langchain.toolMcp",
+      "typeVersion": 1,
+      "position": [
+        500,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "sseEndpoint": "http://72.62.255.251:3102/sse",
+        "options": {
+          "toolsToInclude": "all"
+        }
+      },
+      "id": "mcp-mem",
+      "name": "Knowledge Graph MCP",
+      "type": "@n8n/n8n-nodes-langchain.toolMcp",
+      "typeVersion": 1,
+      "position": [
+        700,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "sseEndpoint": "http://72.62.255.251:3103/sse",
+        "options": {
+          "toolsToInclude": "all"
+        }
+      },
+      "id": "mcp-fetch",
+      "name": "Web Fetch MCP",
+      "type": "@n8n/n8n-nodes-langchain.toolMcp",
+      "typeVersion": 1,
+      "position": [
+        800,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mcp-agent",
+        "authentication": "none",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "wh-agent",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "webhookId": "mcp-agent"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mcp-agent-chat",
+        "authentication": "none",
+        "options": {}
+      },
+      "id": "chat-trigger",
+      "name": "Chat Trigger",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        500
+      ],
+      "webhookId": "mcp-agent-chat"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Trigger": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Yahoo Finance MCP": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic Memory MCP": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Knowledge Graph MCP": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Web Fetch MCP": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "d230fbe2-9467-4942-a01a-6b8fd40b713a",
+  "activeVersionId": null,
+  "versionCounter": 1,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-02-02T08:35:38.515Z",
+      "createdAt": "2026-02-02T08:35:38.515Z",
+      "role": "workflow:owner",
+      "workflowId": "2u3IEwTXbPa58Tyw",
+      "projectId": "AnkDvyc9berGCeVr",
+      "project": {
+        "updatedAt": "2025-11-20T11:09:15.776Z",
+        "createdAt": "2025-11-20T11:09:10.860Z",
+        "id": "AnkDvyc9berGCeVr",
+        "name": "Choi   <mangdeng2@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "d31cb0af-0762-4748-bf1c-ad433f671136",
+        "projectRelations": [
+          {
+            "updatedAt": "2025-11-20T11:09:10.860Z",
+            "createdAt": "2025-11-20T11:09:10.860Z",
+            "userId": "d31cb0af-0762-4748-bf1c-ad433f671136",
+            "projectId": "AnkDvyc9berGCeVr",
+            "user": {
+              "updatedAt": "2026-02-02T01:41:25.000Z",
+              "createdAt": "2025-11-20T11:09:09.324Z",
+              "id": "d31cb0af-0762-4748-bf1c-ad433f671136",
+              "email": "mangdeng2@gmail.com",
+              "firstName": "Choi",
+              "lastName": " ",
+              "personalizationAnswers": null,
+              "settings": {
+                "userActivated": true,
+                "easyAIWorkflowOnboarded": true,
+                "userClaimedAiCredits": true,
+                "firstSuccessfulWorkflowId": "IvtPZ7PrRZ5kHDOV",
+                "userActivatedAt": 1764480578733,
+                "npsSurvey": {
+                  "responded": true,
+                  "lastShownAt": 1765153985448
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-02-01",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": null
+}
