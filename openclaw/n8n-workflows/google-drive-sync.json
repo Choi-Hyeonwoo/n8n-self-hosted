@@ -43,7 +43,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Obsidian Vault 폴더 구조 → Google Drive 폴더 ID 매핑\n// 기존 '지식사랑방' 워크플로우와 같은 Google Drive account 사용\n//\n// ★ 처음 실행 전: Google Drive에 'OpenClaw-Vault' 폴더를 만들고\n//   하위에 아래 폴더들을 만든 뒤 ID를 입력하세요.\n//   (폴더 URL에서 folders/ 뒤의 문자열이 ID)\n\nconst VAULT_DRIVE_ROOT = 'REPLACE_WITH_ROOT_FOLDER_ID';\n\nconst FOLDER_MAP = {\n  '00-MOC':             'REPLACE_WITH_FOLDER_ID',\n  '01-Concepts':        'REPLACE_WITH_FOLDER_ID',\n  '02-Entities':        'REPLACE_WITH_FOLDER_ID',\n  '03-Notes':           'REPLACE_WITH_FOLDER_ID',\n  '04-Daily':           'REPLACE_WITH_FOLDER_ID',\n  '05-Weekly':          'REPLACE_WITH_FOLDER_ID',\n  '06-Projects':        'REPLACE_WITH_FOLDER_ID',\n  '07-Reference':       'REPLACE_WITH_FOLDER_ID',\n  'templates':          'REPLACE_WITH_FOLDER_ID'\n};\n\nreturn [{\n  json: {\n    vaultDriveRoot: VAULT_DRIVE_ROOT,\n    folderMap: FOLDER_MAP,\n    knowledgePath: '/home/openclaw/.openclaw/workspace/knowledge',\n    timestamp: new Date().toISOString()\n  }\n}];"
+        "jsCode": "// 기존 Obsidian Vault (Google Drive) 폴더 ID 매핑\n// 현우님의 실제 Vault 구조에 통합\n\nconst VAULT_DRIVE_ROOT = '1REfIN5HYZEAedSjlL3hn8DryPDOvrUx6';\n\n// VPS 폴더 → Google Drive 폴더 ID\nconst FOLDER_MAP = {\n  '00-MOC':        '1REfIN5HYZEAedSjlL3hn8DryPDOvrUx6',  // Vault Root\n  '01-Concepts':   '1ogBK1ZmjXG4HhB9nk6BKCBPLg8YxGdLW',  // 100. Research\n  '02-Entities':   '1ntnTT3BOd7Wp_p3VBXOuxtdI9aYsLpjo',  // 200. Sectors (default, GICS override below)\n  '03-Notes':      '1t7fLsr0WUsNOSBoM_6QaMgTwsqDHOyaE',  // 00. Inbox\n  '04-Daily':      '12XGamKfK4QyR9heimtUK1I2GF-GfKM4g',  // 10. Daily Notes/11. Daily\n  '05-Weekly':     '1eGFZXjMv6N5nmeMHJoAGoryLpw5TJAVk',  // 10. Daily Notes/12. Weekly\n  '06-Projects':   '1REfIN5HYZEAedSjlL3hn8DryPDOvrUx6',  // Vault Root\n  '07-Reference':  '1ogBK1ZmjXG4HhB9nk6BKCBPLg8YxGdLW',  // 100. Research\n  'templates':     '1zvWXM2XQjsXEFsdFV5gyA3-bXF_NhKif'   // 90. Template\n};\n\n// GICS Sector → Vault 200. Sectors/ 하위 폴더 ID\nconst GICS_SECTOR_MAP = {\n  '10': '1v5eMJPagQ2VYlZg_PxuDwNUPMy3LC1B1',  // 210. Energy\n  '15': '1JEoebgyPHH6m7kmjX5TJ3NejQzW0LUb9',  // 225. Materials\n  '20': '1-ZTweJTKAe5AKlZ5Wew4HrpYEkWCEu7r',  // 220. Industrials\n  '25': '1WPTNaRypzuO0-O9DUiohyq9esu5vIzcE',  // 230. Consumer\n  '30': '1WPTNaRypzuO0-O9DUiohyq9esu5vIzcE',  // 230. Consumer (combined)\n  '35': '1w0XlYF3Tofweq8yjUeR9MNtVSxe8TuYN',  // 240. Health Care\n  '40': '10NY5kzNLAL4yUJn5sax8jxeEGL2hiGaD',  // 250. Financials\n  '45': '1GyRpbJyen4_L1w_nc76aJEJxNaVYZe4Y',  // 260. Information Technology\n  '50': '1vzFxGefRHd0B3PxDZZjct5G1ZjyX8m1e',  // 270. Communication Services\n  '55': '1iAKe2nN-l3eW9FSAc_le9fLVD21wKo65',  // 280. Utilities\n  '60': '1IRYmYC9R5xAxzQ6CSJmvGQY4mbo0Twh3'   // 290. Real Estate\n};\n\n// IT Industry Group → 세부 폴더\nconst IT_SUBGROUP_MAP = {\n  '4510': '1lrPmI1EOPm99rzSCRRK-zEj3I8L_Xelx',  // 261. Software & Services\n  '4520': '1xLpVK-BY1ACGwerdmcdymiDaeR4YokL3',  // 262. Technology Hardware\n  '4530': '1ZBjGdlgyGEy1q72MEBx_pl5_4oLSb-QV'   // 263. Semiconductors\n};\n\nreturn [{\n  json: {\n    vaultDriveRoot: VAULT_DRIVE_ROOT,\n    folderMap: FOLDER_MAP,\n    gicsSectorMap: GICS_SECTOR_MAP,\n    itSubgroupMap: IT_SUBGROUP_MAP,\n    knowledgePath: '/home/openclaw/.openclaw/workspace/knowledge',\n    timestamp: new Date().toISOString()\n  }\n}];"
       },
       "id": "sync-config",
       "name": "Vault → Drive 매핑 설정",
@@ -85,7 +85,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// 두 방법의 결과를 합치고 중복 제거\nconst config = $('Vault → Drive 매핑 설정').first().json;\nconst modifiedFiles = ($('변경된 파일 목록 (SSH)').first().json.stdout || '').split('\\n').filter(f => f.trim());\nconst gitFiles = ($('Git 변경 파일 (SSH)').first().json.stdout || '').split('\\n').filter(f => f.trim());\n\nconst allFiles = [...new Set([...modifiedFiles, ...gitFiles])].filter(f => f.endsWith('.md'));\n\nif (allFiles.length === 0) {\n  return [{ json: { status: 'no_changes', message: '변경된 파일 없음', count: 0 } }];\n}\n\n// 각 파일을 개별 아이템으로 반환 (병렬 처리)\nreturn allFiles.map(filePath => {\n  // 폴더 매핑: '03-Notes/tech/file.md' → '03-Notes'\n  const topFolder = filePath.split('/')[0];\n  const targetFolderId = config.folderMap[topFolder] || config.vaultDriveRoot;\n  \n  return {\n    json: {\n      filePath,\n      topFolder,\n      fileName: filePath.split('/').pop(),\n      fullPath: `${config.knowledgePath}/${filePath}`,\n      targetFolderId\n    }\n  };\n});"
+        "jsCode": "// 두 방법의 결과를 합치고 중복 제거\nconst config = $('Vault → Drive 매핑 설정').first().json;\nconst modifiedFiles = ($('변경된 파일 목록 (SSH)').first().json.stdout || '').split('\\n').filter(f => f.trim());\nconst gitFiles = ($('Git 변경 파일 (SSH)').first().json.stdout || '').split('\\n').filter(f => f.trim());\n\nconst allFiles = [...new Set([...modifiedFiles, ...gitFiles])].filter(f => f.endsWith('.md'));\n\nif (allFiles.length === 0) {\n  return [{ json: { status: 'no_changes', message: '변경된 파일 없음', count: 0 } }];\n}\n\n// 각 파일을 개별 아이템으로 반환\nreturn allFiles.map(filePath => {\n  const topFolder = filePath.split('/')[0];\n  const targetFolderId = config.folderMap[topFolder] || config.vaultDriveRoot;\n  \n  return {\n    json: {\n      filePath,\n      topFolder,\n      fileName: filePath.split('/').pop(),\n      fullPath: `${config.knowledgePath}/${filePath}`,\n      targetFolderId,\n      isEntity: topFolder === '02-Entities',\n      gicsSectorMap: config.gicsSectorMap,\n      itSubgroupMap: config.itSubgroupMap,\n      vaultDriveRoot: config.vaultDriveRoot\n    }\n  };\n});"
       },
       "id": "merge-dedup",
       "name": "합치기 & 중복제거",
@@ -140,10 +140,10 @@
     },
     {
       "parameters": {
-        "jsCode": "// SSH로 읽은 텍스트를 바이너리(MD 파일)로 변환\nconst fileData = $('합치기 & 중복제거').item.json;\nconst content = $input.first().json.stdout || '';\nconst fileName = fileData.fileName;\n\nconst base64Content = Buffer.from(content, 'utf-8').toString('base64');\n\nreturn {\n  json: {\n    ...fileData,\n    contentLength: content.length\n  },\n  binary: {\n    data: {\n      data: base64Content,\n      mimeType: 'text/markdown',\n      fileName: fileName\n    }\n  }\n};"
+        "jsCode": "// SSH로 읽은 텍스트를 바이너리(MD 파일)로 변환\n// + Entity 파일은 GICS frontmatter 파싱하여 정확한 섹터 폴더로 라우팅\n\nconst fileData = $('합치기 & 중복제거').item.json;\nconst content = $input.first().json.stdout || '';\nconst fileName = fileData.fileName;\nlet targetFolderId = fileData.targetFolderId;\n\n// Entity 파일이면 GICS 태그에서 섹터 폴더 결정\nif (fileData.isEntity && content.includes('gics:')) {\n  const gicsSectorMap = fileData.gicsSectorMap || {};\n  const itSubgroupMap = fileData.itSubgroupMap || {};\n  \n  // frontmatter에서 GICS sector 코드 추출\n  // 패턴: #GICS/45/4530 또는 gics: sector: \"45 - ...\"\n  const gicsTagMatch = content.match(/#GICS\\/(\\d{2})(?:\\/(\\d{4}))?/);\n  const gicsSectorMatch = content.match(/sector:\\s*[\"']?(\\d{2})/);\n  \n  const sectorCode = gicsTagMatch ? gicsTagMatch[1] : (gicsSectorMatch ? gicsSectorMatch[1] : null);\n  const igCode = gicsTagMatch ? gicsTagMatch[2] : null;\n  \n  if (sectorCode) {\n    // IT 섹터(45)이고 Industry Group이 있으면 세부 폴더\n    if (sectorCode === '45' && igCode && itSubgroupMap[igCode]) {\n      targetFolderId = itSubgroupMap[igCode];\n    } else if (gicsSectorMap[sectorCode]) {\n      targetFolderId = gicsSectorMap[sectorCode];\n    }\n  }\n}\n\nconst base64Content = Buffer.from(content, 'utf-8').toString('base64');\n\nreturn {\n  json: {\n    ...fileData,\n    targetFolderId,\n    contentLength: content.length\n  },\n  binary: {\n    data: {\n      data: base64Content,\n      mimeType: 'text/markdown',\n      fileName: fileName\n    }\n  }\n};"
       },
       "id": "to-binary",
-      "name": "텍스트→MD 바이너리",
+      "name": "GICS 라우팅 + MD 바이너리",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1550, 300]
@@ -177,7 +177,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// 동기화 리포트 생성\nconst items = $input.all();\nconst syncedCount = items.length;\nconst now = new Date().toLocaleString('ko-KR', {timeZone: 'Asia/Seoul'});\n\nconst fileList = items.map(item => {\n  const name = item.json.fileName || item.json.name || 'unknown';\n  const folder = item.json.topFolder || '';\n  return `  ${folder}/${name}`;\n}).join('\\n');\n\nconst report = [\n  '\\ud83d\\udcc1 OpenClaw Knowledge Sync',\n  '\\u2501'.repeat(24),\n  `\\u23f0 ${now}`,\n  `\\ud83d\\udcc4 ${syncedCount}\\uac74 \\ub3d9\\uae30\\ud654 \\uc644\\ub8cc`,\n  '',\n  fileList,\n  '',\n  '\\u2705 Google Drive \\uc5c5\\ub85c\\ub4dc \\uc644\\ub8cc'\n].join('\\n');\n\nreturn [{ json: { report, syncedCount, timestamp: now } }];"
+        "jsCode": "// 동기화 리포트 생성\nconst items = $input.all();\nconst syncedCount = items.length;\nconst now = new Date().toLocaleString('ko-KR', {timeZone: 'Asia/Seoul'});\n\nconst fileList = items.map(item => {\n  const name = item.json.fileName || item.json.name || 'unknown';\n  const folder = item.json.topFolder || '';\n  return `  ${folder}/${name}`;\n}).join('\\n');\n\nconst report = [\n  '\\ud83d\\udcc1 OpenClaw Knowledge Sync',\n  '\\u2501'.repeat(24),\n  `\\u23f0 ${now}`,\n  `\\ud83d\\udcc4 ${syncedCount}\\uac74 \\ub3d9\\uae30\\ud654 \\uc644\\ub8cc`,\n  '',\n  fileList,\n  '',\n  '\\u2705 Google Drive Vault \\uc5c5\\ub85c\\ub4dc \\uc644\\ub8cc'\n].join('\\n');\n\nreturn [{ json: { report, syncedCount, timestamp: now } }];"
       },
       "id": "build-report",
       "name": "동기화 리포트 생성",
@@ -257,10 +257,10 @@
     },
     "파일 내용 읽기 (SSH)": {
       "main": [
-        [{"node": "텍스트→MD 바이너리", "type": "main", "index": 0}]
+        [{"node": "GICS 라우팅 + MD 바이너리", "type": "main", "index": 0}]
       ]
     },
-    "텍스트→MD 바이너리": {
+    "GICS 라우팅 + MD 바이너리": {
       "main": [
         [{"node": "Google Drive 업로드", "type": "main", "index": 0}]
       ]

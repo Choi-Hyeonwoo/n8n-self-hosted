@@ -1,26 +1,53 @@
-# iCloud → Google Cloud 마이그레이션 가이드
+# OpenClaw → 기존 Obsidian Vault 통합 가이드
 
 ## 개요
 
-iCloud에 있는 Obsidian Vault 전체를 Google Cloud(Google Drive)로 이전하고,
-VPS의 OpenClaw 지식 시스템과 자동 동기화하는 구조를 구축합니다.
+VPS의 OpenClaw 지식 시스템(Ron)이 생성하는 문서를 현우님의 **기존 Google Drive Obsidian Vault**에
+직접 통합합니다. 기존 Vault 구조를 유지하면서 Ron의 지식이 자동으로 올바른 폴더에 동기화됩니다.
 
 ## 아키텍처
 
 ```
-┌─────────────┐     백업      ┌──────────────┐    Obsidian Git    ┌─────────────┐
-│  VPS (Ron)  │ ──────────→  │ Google Drive  │  ←──────────────→  │  로컬 Mac   │
-│  knowledge/ │   n8n 자동    │  Vault 폴더   │    자동 동기화      │  Obsidian   │
-│  Git repo   │              │              │                    │             │
-└──────┬──────┘              └──────────────┘                    └─────────────┘
-       │                            ↑
-       │ git push                   │ iCloud 데이터 이전
-       ↓                            │
-┌──────────────┐              ┌─────────────┐
-│   GitHub     │              │   iCloud    │
-│  Private Repo│              │  (기존 볼트) │
-└──────────────┘              └─────────────┘
+┌─────────────┐    n8n 자동    ┌──────────────────────────────┐    Obsidian    ┌─────────────┐
+│  VPS (Ron)  │ ─────────────→ │ Google Drive Obsidian Vault  │ ←───────────→ │  로컬 Mac   │
+│  knowledge/ │  폴더매핑+GICS │ ├── 00. Inbox/               │  Google Drive │  Obsidian   │
+│  02-Entities│  자동 라우팅    │ ├── 10. Daily Notes/         │  데스크톱 동기 │             │
+│  03-Notes   │               │ ├── 100. Research/           │               │             │
+│  04-Daily   │               │ └── 200. Sectors/{GICS}/     │               │             │
+└──────┬──────┘               └──────────────────────────────┘               └─────────────┘
+       │
+       │ git push (backup)
+       ↓
+┌──────────────┐
+│   GitHub     │
+│  Private Repo│
+└──────────────┘
 ```
+
+## Google Drive Vault 폴더 ID 매핑
+
+| Vault 폴더 | Google Drive ID | 용도 |
+|------------|-----------------|------|
+| Obsidian (Root) | `1REfIN5HYZEAedSjlL3hn8DryPDOvrUx6` | MOC, Projects |
+| 00. Inbox | `1t7fLsr0WUsNOSBoM_6QaMgTwsqDHOyaE` | 일반 노트 |
+| 10. Daily Notes/11. Daily | `12XGamKfK4QyR9heimtUK1I2GF-GfKM4g` | 일일 로그 |
+| 10. Daily Notes/12. Weekly | `1eGFZXjMv6N5nmeMHJoAGoryLpw5TJAVk` | 주간 리포트 |
+| 100. Research | `1ogBK1ZmjXG4HhB9nk6BKCBPLg8YxGdLW` | 개념, 참조 자료 |
+| 200. Sectors | `1ntnTT3BOd7Wp_p3VBXOuxtdI9aYsLpjo` | GICS 분류 기업 |
+| 210. Energy | `1v5eMJPagQ2VYlZg_PxuDwNUPMy3LC1B1` | GICS 10 |
+| 220. Industrials | `1-ZTweJTKAe5AKlZ5Wew4HrpYEkWCEu7r` | GICS 20 |
+| 225. Materials | `1JEoebgyPHH6m7kmjX5TJ3NejQzW0LUb9` | GICS 15 |
+| 230. Consumer | `1WPTNaRypzuO0-O9DUiohyq9esu5vIzcE` | GICS 25+30 |
+| 240. Health Care | `1w0XlYF3Tofweq8yjUeR9MNtVSxe8TuYN` | GICS 35 |
+| 250. Financials | `10NY5kzNLAL4yUJn5sax8jxeEGL2hiGaD` | GICS 40 |
+| 260. Information Technology | `1GyRpbJyen4_L1w_nc76aJEJxNaVYZe4Y` | GICS 45 |
+| 261. Software & Services | `1lrPmI1EOPm99rzSCRRK-zEj3I8L_Xelx` | GICS 4510 |
+| 262. Technology Hardware | `1xLpVK-BY1ACGwerdmcdymiDaeR4YokL3` | GICS 4520 |
+| 263. Semiconductors | `1ZBjGdlgyGEy1q72MEBx_pl5_4oLSb-QV` | GICS 4530 |
+| 270. Communication Services | `1vzFxGefRHd0B3PxDZZjct5G1ZjyX8m1e` | GICS 50 |
+| 280. Utilities | `1iAKe2nN-l3eW9FSAc_le9fLVD21wKo65` | GICS 55 |
+| 290. Real Estate | `1IRYmYC9R5xAxzQ6CSJmvGQY4mbo0Twh3` | GICS 60 |
+| 90. Template | `1zvWXM2XQjsXEFsdFV5gyA3-bXF_NhKif` | 문서 템플릿 |
 
 ## Phase 1: iCloud → Google Drive 이전
 
@@ -118,53 +145,60 @@ crontab -e
 */30 * * * * cd /home/openclaw/.openclaw/workspace/knowledge && git add -A && git commit -m "auto: knowledge update $(date +\%Y-\%m-\%d-\%H\%M)" 2>/dev/null && git push origin main 2>/dev/null
 ```
 
-## Phase 3: n8n Google Drive 백업 연동
+## Phase 3: n8n Google Drive 동기화 워크플로우
 
-### 3-1. n8n에서 Google Drive 크리덴셜 설정
+### 3-1. Google Drive 크리덴셜 (이미 설정됨)
 
-1. n8n Cloud (mangd.app.n8n.cloud) 접속
-2. Settings → Credentials → Add Credential → Google Drive OAuth2
-3. Google Cloud Console에서 OAuth2 클라이언트 생성:
-   - https://console.cloud.google.com/apis/credentials
-   - "Create Credentials" → "OAuth 2.0 Client ID"
-   - Application type: Web application
-   - Redirect URI: `https://mangd.app.n8n.cloud/rest/oauth2-credential/callback`
-4. Client ID, Client Secret → n8n에 입력 → 연결
+기존 "지식사랑방" 워크플로우의 크리덴셜을 재사용:
+- **Google Drive account 2**: `br5pnMr0ZdYx9LuJ` (이미 n8n에 등록됨)
 
-### 3-2. 백업 워크플로우
+### 3-2. 동기화 워크플로우 임포트
 
-n8n에서 워크플로우 생성:
-- 트리거: 매일 03:00 (새벽)
-- Git repo에서 변경된 .md 파일 목록 가져오기
-- Google Drive API로 해당 파일들 업로드/업데이트
-- (news-pipeline.json의 결과도 함께 백업)
+`openclaw/n8n-workflows/google-drive-sync.json`을 n8n에 임포트:
+- 워크플로우 이름: "OpenClaw Knowledge → Google Drive Sync"
+- 트리거: 매일 03:00, 15:00 자동 + 웹훅 수동 트리거
+- 기능:
+  1. VPS에서 변경된 .md 파일 감지 (timestamp + git diff)
+  2. 파일의 VPS 폴더 기반으로 Google Drive 폴더 매핑
+  3. Entity 파일은 GICS frontmatter 파싱 → 정확한 섹터 폴더로 자동 라우팅
+  4. Google Drive 업로드 + 텔레그램 리포트
 
-## Phase 4: 기존 iCloud 데이터와 VPS knowledge 병합
+### 3-3. SSH 크리덴셜 설정 필요
 
-### 4-1. 기존 데이터 분석
+n8n에서 SSH 크리덴셜을 생성해야 합니다:
+1. n8n Cloud → Settings → Credentials → Add Credential → SSH Password
+2. Host: `72.62.255.251`
+3. Username: `openclaw`
+4. Password: (VPS 패스워드)
+5. 생성 후 크리덴셜 ID를 워크플로우의 SSH 노드에 설정
 
-iCloud Vault에 이미 있는 데이터를 카테고리별로 분류:
+## Phase 4: 동기화 테스트
+
+### 4-1. 수동 트리거로 테스트
+
 ```bash
-# 기존 Vault의 구조 확인
-find ~/Google\ Drive/My\ Drive/Obsidian/$VAULT_NAME -name "*.md" -type f | head -50
+# 웹훅으로 동기화 수동 실행
+curl -X POST https://mangd.app.n8n.cloud/webhook/openclaw-knowledge-sync
 ```
 
-### 4-2. 병합 전략
+### 4-2. 확인 사항
 
-1. 기존 문서에 YAML frontmatter 추가 (없는 경우)
-2. VPS의 Obsidian 온톨로지 구조 (`00-MOC/`, `01-Concepts/` 등)에 맞게 재배치
-3. GICS 태그 추가 (기업/금융 관련 문서)
-4. `[[위키링크]]` 연결 보강
+- [ ] VPS의 `04-Daily/*.md` → Google Drive `10. Daily Notes/11. Daily/`에 동기화
+- [ ] VPS의 `02-Entities/NVIDIA.md` → Google Drive `200. Sectors/260. Information Technology/263. Semiconductors/`에 동기화
+- [ ] VPS의 `03-Notes/*.md` → Google Drive `00. Inbox/`에 동기화
+- [ ] 텔레그램 리포트 수신 확인
 
 ## 체크리스트
 
-- [ ] Google Drive 데스크톱 앱 설치
-- [ ] iCloud Vault → Google Drive 복사
-- [ ] Obsidian에서 새 Vault 경로 확인
-- [ ] GitHub Private Repo 생성
+- [x] Google Drive Obsidian Vault 구조 확인
+- [x] Google Drive 폴더 ID 매핑 완료
+- [x] GICS 섹터 → Vault 폴더 매핑 완료
+- [x] n8n 동기화 워크플로우 작성
+- [x] Knowledge Manager 스킬 업데이트
+- [ ] n8n에 SSH 크리덴셜 생성
+- [ ] 동기화 워크플로우 n8n에 임포트 & 활성화
+- [ ] 수동 트리거로 테스트
+- [ ] GitHub Private Repo 생성 (Git 백업용)
 - [ ] VPS Git 초기화 & SSH 키 설정
-- [ ] Obsidian Git 플러그인 설정
+- [ ] Obsidian Git 플러그인 설정 (선택)
 - [ ] VPS 자동 커밋 크론 설정
-- [ ] n8n Google Drive 크리덴셜 연결
-- [ ] 기존 데이터 병합
-- [ ] iCloud 동기화 해제
