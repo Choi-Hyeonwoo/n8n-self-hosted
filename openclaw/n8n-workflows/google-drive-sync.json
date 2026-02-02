@@ -53,42 +53,26 @@
     },
     {
       "parameters": {
-        "command": "=cd /home/openclaw/.openclaw/workspace/knowledge && find . -name '*.md' -newer /tmp/.openclaw-gdrive-sync 2>/dev/null | sed 's|^\\./||' | head -100; touch /tmp/.openclaw-gdrive-sync"
+        "command": "=KB=/home/openclaw/.openclaw/workspace/knowledge; cd $KB && { find . -name '*.md' -newer /tmp/.openclaw-gdrive-sync 2>/dev/null | sed 's|^\\./||'; git diff --name-only HEAD~1 HEAD 2>/dev/null | grep '\\.md$'; } | sort -u | head -100; touch /tmp/.openclaw-gdrive-sync"
       },
-      "id": "get-modified-files",
-      "name": "변경된 파일 목록 (SSH)",
+      "id": "detect-changed-files",
+      "name": "변경 파일 감지 (SSH)",
       "type": "n8n-nodes-base.ssh",
       "typeVersion": 1,
-      "position": [700, 300],
+      "position": [700, 400],
       "credentials": {
         "sshPassword": {
-          "id": "REPLACE_WITH_SSH_CREDENTIAL_ID",
-          "name": "Hostinger VPS"
+          "id": "47cfcQNdg7UVO9gV",
+          "name": "SSH Password account"
         }
       }
     },
     {
       "parameters": {
-        "command": "=cd /home/openclaw/.openclaw/workspace/knowledge && git diff --name-only HEAD~1 HEAD 2>/dev/null | grep '.md$' | head -50"
+        "jsCode": "// SSH 결과를 파싱하여 파일별 아이템 생성\nconst config = $('Vault → Drive 매핑 설정').first().json;\nconst stdout = $('변경 파일 감지 (SSH)').first().json.stdout || '';\nconst allFiles = stdout.split('\\n').filter(f => f.trim() && f.endsWith('.md'));\n\nif (allFiles.length === 0) {\n  return [{ json: { status: 'no_changes', message: '변경된 파일 없음', count: 0 } }];\n}\n\n// 각 파일을 개별 아이템으로 반환\nreturn allFiles.map(filePath => {\n  const topFolder = filePath.split('/')[0];\n  const targetFolderId = config.folderMap[topFolder] || config.vaultDriveRoot;\n  \n  return {\n    json: {\n      filePath,\n      topFolder,\n      fileName: filePath.split('/').pop(),\n      fullPath: `${config.knowledgePath}/${filePath}`,\n      targetFolderId,\n      isEntity: topFolder === '02-Entities',\n      gicsSectorMap: config.gicsSectorMap,\n      itSubgroupMap: config.itSubgroupMap,\n      vaultDriveRoot: config.vaultDriveRoot\n    }\n  };\n});"
       },
-      "id": "get-git-changed",
-      "name": "Git 변경 파일 (SSH)",
-      "type": "n8n-nodes-base.ssh",
-      "typeVersion": 1,
-      "position": [700, 500],
-      "credentials": {
-        "sshPassword": {
-          "id": "REPLACE_WITH_SSH_CREDENTIAL_ID",
-          "name": "Hostinger VPS"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "// 두 방법의 결과를 합치고 중복 제거\nconst config = $('Vault → Drive 매핑 설정').first().json;\nconst modifiedFiles = ($('변경된 파일 목록 (SSH)').first().json.stdout || '').split('\\n').filter(f => f.trim());\nconst gitFiles = ($('Git 변경 파일 (SSH)').first().json.stdout || '').split('\\n').filter(f => f.trim());\n\nconst allFiles = [...new Set([...modifiedFiles, ...gitFiles])].filter(f => f.endsWith('.md'));\n\nif (allFiles.length === 0) {\n  return [{ json: { status: 'no_changes', message: '변경된 파일 없음', count: 0 } }];\n}\n\n// 각 파일을 개별 아이템으로 반환\nreturn allFiles.map(filePath => {\n  const topFolder = filePath.split('/')[0];\n  const targetFolderId = config.folderMap[topFolder] || config.vaultDriveRoot;\n  \n  return {\n    json: {\n      filePath,\n      topFolder,\n      fileName: filePath.split('/').pop(),\n      fullPath: `${config.knowledgePath}/${filePath}`,\n      targetFolderId,\n      isEntity: topFolder === '02-Entities',\n      gicsSectorMap: config.gicsSectorMap,\n      itSubgroupMap: config.itSubgroupMap,\n      vaultDriveRoot: config.vaultDriveRoot\n    }\n  };\n});"
-      },
-      "id": "merge-dedup",
-      "name": "합치기 & 중복제거",
+      "id": "parse-files",
+      "name": "파일 목록 파싱",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [950, 400]
@@ -133,14 +117,14 @@
       "position": [1350, 300],
       "credentials": {
         "sshPassword": {
-          "id": "REPLACE_WITH_SSH_CREDENTIAL_ID",
-          "name": "Hostinger VPS"
+          "id": "47cfcQNdg7UVO9gV",
+          "name": "SSH Password account"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "// SSH로 읽은 텍스트를 바이너리(MD 파일)로 변환\n// + Entity 파일은 GICS frontmatter 파싱하여 정확한 섹터 폴더로 라우팅\n\nconst fileData = $('합치기 & 중복제거').item.json;\nconst content = $input.first().json.stdout || '';\nconst fileName = fileData.fileName;\nlet targetFolderId = fileData.targetFolderId;\n\n// Entity 파일이면 GICS 태그에서 섹터 폴더 결정\nif (fileData.isEntity && content.includes('gics:')) {\n  const gicsSectorMap = fileData.gicsSectorMap || {};\n  const itSubgroupMap = fileData.itSubgroupMap || {};\n  \n  // frontmatter에서 GICS sector 코드 추출\n  // 패턴: #GICS/45/4530 또는 gics: sector: \"45 - ...\"\n  const gicsTagMatch = content.match(/#GICS\\/(\\d{2})(?:\\/(\\d{4}))?/);\n  const gicsSectorMatch = content.match(/sector:\\s*[\"']?(\\d{2})/);\n  \n  const sectorCode = gicsTagMatch ? gicsTagMatch[1] : (gicsSectorMatch ? gicsSectorMatch[1] : null);\n  const igCode = gicsTagMatch ? gicsTagMatch[2] : null;\n  \n  if (sectorCode) {\n    // IT 섹터(45)이고 Industry Group이 있으면 세부 폴더\n    if (sectorCode === '45' && igCode && itSubgroupMap[igCode]) {\n      targetFolderId = itSubgroupMap[igCode];\n    } else if (gicsSectorMap[sectorCode]) {\n      targetFolderId = gicsSectorMap[sectorCode];\n    }\n  }\n}\n\nconst base64Content = Buffer.from(content, 'utf-8').toString('base64');\n\nreturn {\n  json: {\n    ...fileData,\n    targetFolderId,\n    contentLength: content.length\n  },\n  binary: {\n    data: {\n      data: base64Content,\n      mimeType: 'text/markdown',\n      fileName: fileName\n    }\n  }\n};"
+        "jsCode": "// SSH로 읽은 텍스트를 바이너리(MD 파일)로 변환\n// + Entity 파일은 GICS frontmatter 파싱하여 정확한 섹터 폴더로 라우팅\n\nconst fileData = $('파일 목록 파싱').item.json;\nconst content = $input.first().json.stdout || '';\nconst fileName = fileData.fileName;\nlet targetFolderId = fileData.targetFolderId;\n\n// Entity 파일이면 GICS 태그에서 섹터 폴더 결정\nif (fileData.isEntity && content.includes('gics:')) {\n  const gicsSectorMap = fileData.gicsSectorMap || {};\n  const itSubgroupMap = fileData.itSubgroupMap || {};\n  \n  // frontmatter에서 GICS sector 코드 추출\n  // 패턴: #GICS/45/4530 또는 gics: sector: \"45 - ...\"\n  const gicsTagMatch = content.match(/#GICS\\/(\\d{2})(?:\\/(\\d{4}))?/);\n  const gicsSectorMatch = content.match(/sector:\\s*[\"']?(\\d{2})/);\n  \n  const sectorCode = gicsTagMatch ? gicsTagMatch[1] : (gicsSectorMatch ? gicsSectorMatch[1] : null);\n  const igCode = gicsTagMatch ? gicsTagMatch[2] : null;\n  \n  if (sectorCode) {\n    // IT 섹터(45)이고 Industry Group이 있으면 세부 폴더\n    if (sectorCode === '45' && igCode && itSubgroupMap[igCode]) {\n      targetFolderId = itSubgroupMap[igCode];\n    } else if (gicsSectorMap[sectorCode]) {\n      targetFolderId = gicsSectorMap[sectorCode];\n    }\n  }\n}\n\nconst base64Content = Buffer.from(content, 'utf-8').toString('base64');\n\nreturn {\n  json: {\n    ...fileData,\n    targetFolderId,\n    contentLength: content.length\n  },\n  binary: {\n    data: {\n      data: base64Content,\n      mimeType: 'text/markdown',\n      fileName: fileName\n    }\n  }\n};"
       },
       "id": "to-binary",
       "name": "GICS 라우팅 + MD 바이너리",
@@ -228,23 +212,15 @@
     },
     "Vault → Drive 매핑 설정": {
       "main": [
-        [
-          {"node": "변경된 파일 목록 (SSH)", "type": "main", "index": 0},
-          {"node": "Git 변경 파일 (SSH)", "type": "main", "index": 0}
-        ]
+        [{"node": "변경 파일 감지 (SSH)", "type": "main", "index": 0}]
       ]
     },
-    "변경된 파일 목록 (SSH)": {
+    "변경 파일 감지 (SSH)": {
       "main": [
-        [{"node": "합치기 & 중복제거", "type": "main", "index": 0}]
+        [{"node": "파일 목록 파싱", "type": "main", "index": 0}]
       ]
     },
-    "Git 변경 파일 (SSH)": {
-      "main": [
-        [{"node": "합치기 & 중복제거", "type": "main", "index": 0}]
-      ]
-    },
-    "합치기 & 중복제거": {
+    "파일 목록 파싱": {
       "main": [
         [{"node": "변경사항 있음?", "type": "main", "index": 0}]
       ]
