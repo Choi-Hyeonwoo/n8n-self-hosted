@@ -1,0 +1,248 @@
+{
+  "name": "OpenClaw News Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 7,
+              "triggerAtMinute": 30
+            },
+            {
+              "triggerAtHour": 12
+            },
+            {
+              "triggerAtHour": 18
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Daily Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://hnrss.org/frontpage?count=30",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "hn-rss",
+      "name": "Hacker News",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [250, 100]
+    },
+    {
+      "parameters": {
+        "url": "https://techcrunch.com/feed/",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "tc-rss",
+      "name": "TechCrunch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "verge-rss",
+      "name": "The Verge AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [250, 500]
+    },
+    {
+      "parameters": {
+        "url": "https://zdnet.co.kr/rss/newsall.xml",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "zdnet-rss",
+      "name": "ZDNet Korea",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [250, 700]
+    },
+    {
+      "parameters": {
+        "url": "https://polling.finance.naver.com/api/realtime?query=SERVICE_INDEX:KOSPI,KOSDAQ",
+        "options": {}
+      },
+      "id": "finance-kr",
+      "name": "Korean Market",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [250, 900]
+    },
+    {
+      "parameters": {
+        "url": "https://api.exchangerate-api.com/v4/latest/USD",
+        "options": {}
+      },
+      "id": "exchange-rate",
+      "name": "Exchange Rate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [250, 1100]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {},
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "merge-news",
+      "name": "Merge All Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse RSS XML and extract articles\nconst items = $input.all();\nconst articles = [];\n\nfor (const item of items) {\n  const data = item.json.data || item.json.body || item.json;\n  let text = typeof data === 'string' ? data : JSON.stringify(data);\n  \n  // Simple RSS XML parser\n  const itemRegex = /<item[^>]*>([\\s\\S]*?)<\\/item>/gi;\n  let match;\n  while ((match = itemRegex.exec(text)) !== null) {\n    const content = match[1];\n    const title = (content.match(/<title[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/title>/s) || [])[1] || '';\n    const link = (content.match(/<link[^>]*>(.*?)<\\/link>/s) || [])[1] || '';\n    const desc = (content.match(/<description[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/description>/s) || [])[1] || '';\n    const pubDate = (content.match(/<pubDate>(.*?)<\\/pubDate>/s) || [])[1] || '';\n    \n    if (title) {\n      articles.push({\n        json: {\n          title: title.replace(/<[^>]*>/g, '').trim(),\n          link: link.trim(),\n          description: desc.replace(/<[^>]*>/g, '').trim().substring(0, 300),\n          pubDate: pubDate,\n          source: 'rss'\n        }\n      });\n    }\n  }\n}\n\nreturn articles.length > 0 ? articles : [{json: {title: 'No articles found', source: 'error'}}];"
+      },
+      "id": "parse-rss",
+      "name": "Parse RSS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst keywords = {\n  high: ['ai 에이전트', 'llm', 'claude', 'gpt', 'openai', 'anthropic', 'gemini',\n         '자동화', 'automation', 'agi', 'transformer', '반도체', 'nvidia', 'gpu',\n         'n8n', 'workflow', 'agent', 'chatbot', 'openclaw'],\n  medium: ['스타트업', 'api', 'saas', '클라우드', 'cloud', 'docker',\n           'kubernetes', '핀테크', 'fintech', 'react', 'node.js', 'python',\n           'machine learning', '머신러닝', 'deep learning', '딥러닝'],\n  context: ['한국', 'korea', 'samsung', 'kakao', 'naver', '네이버', '카카오']\n};\n\nconst seen = new Set();\nconst scored = [];\n\nfor (const item of items) {\n  const title = (item.json.title || '').toLowerCase();\n  const desc = (item.json.description || '').toLowerCase();\n  const text = title + ' ' + desc;\n\n  // Dedup\n  const key = title.replace(/[^a-z가-힣0-9]/g, '').substring(0, 40);\n  if (seen.has(key) || !title || title === 'no articles found') continue;\n  seen.add(key);\n\n  // Score\n  let score = 0;\n  keywords.high.forEach(k => { if (text.includes(k)) score += 3; });\n  keywords.medium.forEach(k => { if (text.includes(k)) score += 1; });\n  keywords.context.forEach(k => { if (text.includes(k)) score += 1; });\n\n  // Recency bonus\n  const pubDate = new Date(item.json.pubDate || Date.now());\n  const hoursAgo = (Date.now() - pubDate.getTime()) / 3600000;\n  if (hoursAgo < 6) score += 3;\n  else if (hoursAgo < 24) score += 1;\n\n  if (score >= 3) {\n    scored.push({\n      json: {\n        title: item.json.title,\n        link: item.json.link,\n        score: score,\n        grade: score >= 7 ? 'A' : score >= 4 ? 'B' : 'C',\n        description: item.json.description,\n        pubDate: pubDate.toISOString()\n      }\n    });\n  }\n}\n\nscored.sort((a, b) => b.json.score - a.json.score);\nreturn scored.slice(0, 15);"
+      },
+      "id": "score-filter",
+      "name": "Score & Filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const news = $('Score & Filter').all();\nlet finance = {};\nlet exchange = {};\n\ntry {\n  finance = $('Korean Market').first().json;\n} catch(e) { finance = {error: 'unavailable'}; }\n\ntry {\n  exchange = $('Exchange Rate').first().json;\n} catch(e) { exchange = {error: 'unavailable'}; }\n\nconst gradeA = news.filter(n => n.json.grade === 'A');\nconst gradeB = news.filter(n => n.json.grade === 'B');\n\nconst now = new Date().toLocaleDateString('ko-KR', {timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short'});\n\nlet report = `📊 Morning Brief | ${now}\\n\\n`;\nreport += `━━━ 🔥 TOP 핵심 뉴스 ━━━\\n`;\ngradeA.forEach((n, i) => {\n  report += `${i+1}. ${n.json.title}\\n   ${n.json.link}\\n`;\n});\n\nif (gradeB.length > 0) {\n  report += `\\n━━━ 📰 주요 뉴스 ━━━\\n`;\n  gradeB.slice(0, 5).forEach((n, i) => {\n    report += `• ${n.json.title}\\n`;\n  });\n}\n\nconst krw = exchange.rates ? exchange.rates.KRW : 'N/A';\nreport += `\\n━━━ 💰 Finance ━━━\\n`;\nreport += `• 원/달러: ${krw}\\n`;\n\nreport += `\\n━━━ 📋 수집 통계 ━━━\\n`;\nreport += `• A등급: ${gradeA.length}건 | B등급: ${gradeB.length}건\\n`;\nreport += `• 총 필터링 통과: ${news.length}건\\n`;\n\nreturn [{ json: { report, newsCount: news.length, timestamp: new Date().toISOString() } }];"
+      },
+      "id": "build-report",
+      "name": "Build Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8423138757:AAGiCfdo5Mwhn68sURNB--e9W-LsrM_WFCU/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: '492860021', text: $json.report, parse_mode: 'HTML' }) }}"
+      },
+      "id": "telegram-send",
+      "name": "Send to Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, 500]
+    }
+  ],
+  "connections": {
+    "Daily Schedule": {
+      "main": [
+        [
+          {"node": "Hacker News", "type": "main", "index": 0},
+          {"node": "TechCrunch", "type": "main", "index": 0},
+          {"node": "The Verge AI", "type": "main", "index": 0},
+          {"node": "ZDNet Korea", "type": "main", "index": 0},
+          {"node": "Korean Market", "type": "main", "index": 0},
+          {"node": "Exchange Rate", "type": "main", "index": 0}
+        ]
+      ]
+    },
+    "Hacker News": {
+      "main": [
+        [{"node": "Merge All Sources", "type": "main", "index": 0}]
+      ]
+    },
+    "TechCrunch": {
+      "main": [
+        [{"node": "Merge All Sources", "type": "main", "index": 0}]
+      ]
+    },
+    "The Verge AI": {
+      "main": [
+        [{"node": "Merge All Sources", "type": "main", "index": 0}]
+      ]
+    },
+    "ZDNet Korea": {
+      "main": [
+        [{"node": "Merge All Sources", "type": "main", "index": 0}]
+      ]
+    },
+    "Merge All Sources": {
+      "main": [
+        [{"node": "Parse RSS", "type": "main", "index": 0}]
+      ]
+    },
+    "Parse RSS": {
+      "main": [
+        [{"node": "Score & Filter", "type": "main", "index": 0}]
+      ]
+    },
+    "Score & Filter": {
+      "main": [
+        [{"node": "Build Report", "type": "main", "index": 0}]
+      ]
+    },
+    "Korean Market": {
+      "main": [
+        [{"node": "Build Report", "type": "main", "index": 0}]
+      ]
+    },
+    "Exchange Rate": {
+      "main": [
+        [{"node": "Build Report", "type": "main", "index": 0}]
+      ]
+    },
+    "Build Report": {
+      "main": [
+        [{"node": "Send to Telegram", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Seoul"
+  },
+  "tags": [
+    {"name": "openclaw"},
+    {"name": "automation"},
+    {"name": "news"}
+  ]
+}
