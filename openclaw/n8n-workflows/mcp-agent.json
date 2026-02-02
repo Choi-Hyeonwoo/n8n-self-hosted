@@ -1,11 +1,5 @@
 {
-  "updatedAt": "2026-02-02T10:39:42.191Z",
-  "createdAt": "2026-02-02T08:35:38.513Z",
-  "id": "2u3IEwTXbPa58Tyw",
   "name": "OpenClaw MCP Agent",
-  "description": null,
-  "active": true,
-  "isArchived": false,
   "nodes": [
     {
       "parameters": {
@@ -37,8 +31,8 @@
       ],
       "credentials": {
         "openAiApi": {
-          "id": "gTvywsb8fhsdYFHr",
-          "name": "n8n free OpenAI API credits"
+          "id": "J4U9S3zNh5bhlnRs",
+          "name": "OpenClaw OpenAI"
         }
       }
     },
@@ -56,7 +50,7 @@
     },
     {
       "parameters": {
-        "name": "Yahoo Finance Tool",
+        "name": "yahoo_finance",
         "description": "주식/금융 데이터 조회. 사용 가능 도구: get_quote(symbol), get_historical_data(symbol,period1,period2,interval), search_symbols(query), get_company_info(symbol), get_recommendations(symbol), get_trending_symbols(), get_market_summary(), get_news(query,newsCount), get_options(symbol). tool_name과 args를 JSON으로 전달.",
         "language": "javaScript",
         "jsCode": "async function mcpCall(port, toolName, toolArgs) {\n  const baseUrl = \"http://72.62.255.251:\" + port;\n  \n  // Step 1: Initialize and get session ID\n  const initResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/json\", \"Accept\": \"application/json\" },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 1, method: \"initialize\",\n      params: { protocolVersion: \"2024-11-05\", capabilities: {}, clientInfo: { name: \"n8n-ron\", version: \"1.0\" } }\n    })\n  });\n  const sessionId = initResp.headers.get(\"mcp-session-id\");\n  \n  // Step 2: Call tool\n  const callResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: {\n      \"Content-Type\": \"application/json\",\n      \"Accept\": \"application/json\",\n      \"Mcp-Session-Id\": sessionId\n    },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 2, method: \"tools/call\",\n      params: { name: toolName, arguments: toolArgs || {} }\n    })\n  });\n  const result = await callResp.json();\n  \n  if (result.error) return \"Error: \" + result.error.message;\n  if (result.result && result.result.content) {\n    return result.result.content.map(c => c.text || JSON.stringify(c)).join(\"\\n\");\n  }\n  return JSON.stringify(result.result);\n}\n\nconst input = $fromAI(\"tool_call\", \"JSON object with tool_name (string) and args (object)\", \"object\");\nconst toolName = input.tool_name || input.toolName;\nconst args = input.args || input.arguments || {};\nconst result = await mcpCall(3100, toolName, args);\nreturn result;"
@@ -72,7 +66,7 @@
     },
     {
       "parameters": {
-        "name": "Basic Memory Tool",
+        "name": "basic_memory",
         "description": "지식 저장/검색. 사용 가능 도구: write_note(title,content,folder), read_note(title), search_notes(query), list_notes(folder), delete_note(title). tool_name과 args를 JSON으로 전달.",
         "language": "javaScript",
         "jsCode": "async function mcpCall(port, toolName, toolArgs) {\n  const baseUrl = \"http://72.62.255.251:\" + port;\n  \n  // Step 1: Initialize and get session ID\n  const initResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/json\", \"Accept\": \"application/json\" },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 1, method: \"initialize\",\n      params: { protocolVersion: \"2024-11-05\", capabilities: {}, clientInfo: { name: \"n8n-ron\", version: \"1.0\" } }\n    })\n  });\n  const sessionId = initResp.headers.get(\"mcp-session-id\");\n  \n  // Step 2: Call tool\n  const callResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: {\n      \"Content-Type\": \"application/json\",\n      \"Accept\": \"application/json\",\n      \"Mcp-Session-Id\": sessionId\n    },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 2, method: \"tools/call\",\n      params: { name: toolName, arguments: toolArgs || {} }\n    })\n  });\n  const result = await callResp.json();\n  \n  if (result.error) return \"Error: \" + result.error.message;\n  if (result.result && result.result.content) {\n    return result.result.content.map(c => c.text || JSON.stringify(c)).join(\"\\n\");\n  }\n  return JSON.stringify(result.result);\n}\n\nconst input = $fromAI(\"tool_call\", \"JSON object with tool_name (string) and args (object)\", \"object\");\nconst toolName = input.tool_name || input.toolName;\nconst args = input.args || input.arguments || {};\nconst result = await mcpCall(3101, toolName, args);\nreturn result;"
@@ -88,7 +82,7 @@
     },
     {
       "parameters": {
-        "name": "Knowledge Graph Tool",
+        "name": "knowledge_graph",
         "description": "지식 그래프 관리. 사용 가능 도구: create_entities(entities), create_relations(relations), search_nodes(query), open_nodes(names), delete_entities(entityNames), read_graph(). tool_name과 args를 JSON으로 전달.",
         "language": "javaScript",
         "jsCode": "async function mcpCall(port, toolName, toolArgs) {\n  const baseUrl = \"http://72.62.255.251:\" + port;\n  \n  // Step 1: Initialize and get session ID\n  const initResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/json\", \"Accept\": \"application/json\" },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 1, method: \"initialize\",\n      params: { protocolVersion: \"2024-11-05\", capabilities: {}, clientInfo: { name: \"n8n-ron\", version: \"1.0\" } }\n    })\n  });\n  const sessionId = initResp.headers.get(\"mcp-session-id\");\n  \n  // Step 2: Call tool\n  const callResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: {\n      \"Content-Type\": \"application/json\",\n      \"Accept\": \"application/json\",\n      \"Mcp-Session-Id\": sessionId\n    },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 2, method: \"tools/call\",\n      params: { name: toolName, arguments: toolArgs || {} }\n    })\n  });\n  const result = await callResp.json();\n  \n  if (result.error) return \"Error: \" + result.error.message;\n  if (result.result && result.result.content) {\n    return result.result.content.map(c => c.text || JSON.stringify(c)).join(\"\\n\");\n  }\n  return JSON.stringify(result.result);\n}\n\nconst input = $fromAI(\"tool_call\", \"JSON object with tool_name (string) and args (object)\", \"object\");\nconst toolName = input.tool_name || input.toolName;\nconst args = input.args || input.arguments || {};\nconst result = await mcpCall(3102, toolName, args);\nreturn result;"
@@ -104,7 +98,7 @@
     },
     {
       "parameters": {
-        "name": "Web Fetch Tool",
+        "name": "web_fetch",
         "description": "웹 페이지 조회. 사용 가능 도구: fetch(url, max_length, start_index, raw). tool_name='fetch'와 args를 JSON으로 전달.",
         "language": "javaScript",
         "jsCode": "async function mcpCall(port, toolName, toolArgs) {\n  const baseUrl = \"http://72.62.255.251:\" + port;\n  \n  // Step 1: Initialize and get session ID\n  const initResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/json\", \"Accept\": \"application/json\" },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 1, method: \"initialize\",\n      params: { protocolVersion: \"2024-11-05\", capabilities: {}, clientInfo: { name: \"n8n-ron\", version: \"1.0\" } }\n    })\n  });\n  const sessionId = initResp.headers.get(\"mcp-session-id\");\n  \n  // Step 2: Call tool\n  const callResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: {\n      \"Content-Type\": \"application/json\",\n      \"Accept\": \"application/json\",\n      \"Mcp-Session-Id\": sessionId\n    },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 2, method: \"tools/call\",\n      params: { name: toolName, arguments: toolArgs || {} }\n    })\n  });\n  const result = await callResp.json();\n  \n  if (result.error) return \"Error: \" + result.error.message;\n  if (result.result && result.result.content) {\n    return result.result.content.map(c => c.text || JSON.stringify(c)).join(\"\\n\");\n  }\n  return JSON.stringify(result.result);\n}\n\nconst input = $fromAI(\"tool_call\", \"JSON object with tool_name (string) and args (object)\", \"object\");\nconst toolName = input.tool_name || input.toolName;\nconst args = input.args || input.arguments || {};\nconst result = await mcpCall(3103, toolName, args);\nreturn result;"
@@ -120,7 +114,7 @@
     },
     {
       "parameters": {
-        "name": "Obsidian Vault Tool",
+        "name": "obsidian_vault",
         "description": "Obsidian 지식 볼트 관리. 사용 가능 도구: search-vault(vault,query), create-note(vault,path,content,tags), edit-note(vault,path,content), list-available-vaults(), move-note(vault,oldPath,newPath), delete-note(vault,path), add-tags(vault,path,tags), remove-tags(vault,path,tags). vault='obsidian-vault-data'. tool_name과 args를 JSON으로 전달.",
         "language": "javaScript",
         "jsCode": "async function mcpCall(port, toolName, toolArgs) {\n  const baseUrl = \"http://72.62.255.251:\" + port;\n  \n  // Step 1: Initialize and get session ID\n  const initResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/json\", \"Accept\": \"application/json\" },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 1, method: \"initialize\",\n      params: { protocolVersion: \"2024-11-05\", capabilities: {}, clientInfo: { name: \"n8n-ron\", version: \"1.0\" } }\n    })\n  });\n  const sessionId = initResp.headers.get(\"mcp-session-id\");\n  \n  // Step 2: Call tool\n  const callResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: {\n      \"Content-Type\": \"application/json\",\n      \"Accept\": \"application/json\",\n      \"Mcp-Session-Id\": sessionId\n    },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 2, method: \"tools/call\",\n      params: { name: toolName, arguments: toolArgs || {} }\n    })\n  });\n  const result = await callResp.json();\n  \n  if (result.error) return \"Error: \" + result.error.message;\n  if (result.result && result.result.content) {\n    return result.result.content.map(c => c.text || JSON.stringify(c)).join(\"\\n\");\n  }\n  return JSON.stringify(result.result);\n}\n\nconst input = $fromAI(\"tool_call\", \"JSON object with tool_name (string) and args (object)\", \"object\");\nconst toolName = input.tool_name || input.toolName;\nconst args = input.args || input.arguments || {};\nconst result = await mcpCall(3104, toolName, args);\nreturn result;"
@@ -218,292 +212,5 @@
     "executionOrder": "v1",
     "callerPolicy": "workflowsFromSameOwner",
     "availableInMCP": false
-  },
-  "staticData": null,
-  "meta": null,
-  "pinData": null,
-  "versionId": "c99e4396-3cde-480e-9859-42313de1f918",
-  "activeVersionId": "c99e4396-3cde-480e-9859-42313de1f918",
-  "versionCounter": 6,
-  "triggerCount": 1,
-  "shared": [
-    {
-      "updatedAt": "2026-02-02T08:35:38.515Z",
-      "createdAt": "2026-02-02T08:35:38.515Z",
-      "role": "workflow:owner",
-      "workflowId": "2u3IEwTXbPa58Tyw",
-      "projectId": "AnkDvyc9berGCeVr",
-      "project": {
-        "updatedAt": "2025-11-20T11:09:15.776Z",
-        "createdAt": "2025-11-20T11:09:10.860Z",
-        "id": "AnkDvyc9berGCeVr",
-        "name": "Choi   <mangdeng2@gmail.com>",
-        "type": "personal",
-        "icon": null,
-        "description": null,
-        "creatorId": "d31cb0af-0762-4748-bf1c-ad433f671136",
-        "projectRelations": [
-          {
-            "updatedAt": "2025-11-20T11:09:10.860Z",
-            "createdAt": "2025-11-20T11:09:10.860Z",
-            "userId": "d31cb0af-0762-4748-bf1c-ad433f671136",
-            "projectId": "AnkDvyc9berGCeVr",
-            "user": {
-              "updatedAt": "2026-02-02T10:19:08.000Z",
-              "createdAt": "2025-11-20T11:09:09.324Z",
-              "id": "d31cb0af-0762-4748-bf1c-ad433f671136",
-              "email": "mangdeng2@gmail.com",
-              "firstName": "Choi",
-              "lastName": " ",
-              "personalizationAnswers": null,
-              "settings": {
-                "userActivated": true,
-                "easyAIWorkflowOnboarded": true,
-                "userClaimedAiCredits": true,
-                "firstSuccessfulWorkflowId": "IvtPZ7PrRZ5kHDOV",
-                "userActivatedAt": 1764480578733,
-                "npsSurvey": {
-                  "responded": true,
-                  "lastShownAt": 1765153985448
-                }
-              },
-              "disabled": false,
-              "mfaEnabled": false,
-              "lastActiveAt": "2026-02-01",
-              "isPending": false
-            }
-          }
-        ]
-      }
-    }
-  ],
-  "tags": [],
-  "activeVersion": {
-    "updatedAt": "2026-02-02T10:39:42.193Z",
-    "createdAt": "2026-02-02T10:39:42.193Z",
-    "versionId": "c99e4396-3cde-480e-9859-42313de1f918",
-    "workflowId": "2u3IEwTXbPa58Tyw",
-    "nodes": [
-      {
-        "parameters": {
-          "options": {
-            "systemMessage": "You are Ron (론), an AI financial analyst and knowledge manager agent.\n\nYou have 5 MCP tools. Each tool accepts a JSON object with 'tool_name' and 'args'.\n\nExample: {\"tool_name\": \"get_quote\", \"args\": {\"symbol\": \"AAPL\"}}\n\nAvailable MCP servers:\n1. Yahoo Finance Tool: get_quote, get_historical_data, search_symbols, get_company_info, get_recommendations, get_trending_symbols, get_market_summary, get_news, get_options\n2. Basic Memory Tool: write_note, read_note, search_notes, list_notes, delete_note\n3. Knowledge Graph Tool: create_entities, create_relations, search_nodes, open_nodes, delete_entities, read_graph\n4. Web Fetch Tool: fetch(url)\n5. Obsidian Vault Tool: search-vault, create-note, edit-note, list-available-vaults, move-note, delete-note, add-tags, remove-tags (vault='obsidian-vault-data')\n\nAlways respond in Korean unless asked otherwise. When analyzing stocks, provide GICS sector classification."
-          }
-        },
-        "id": "agent1",
-        "name": "AI Agent",
-        "type": "@n8n/n8n-nodes-langchain.agent",
-        "typeVersion": 1.7,
-        "position": [
-          700,
-          300
-        ]
-      },
-      {
-        "parameters": {
-          "model": "gpt-4o-mini",
-          "options": {}
-        },
-        "id": "llm1",
-        "name": "OpenAI Chat Model",
-        "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
-        "typeVersion": 1.2,
-        "position": [
-          700,
-          520
-        ],
-        "credentials": {
-          "openAiApi": {
-            "id": "gTvywsb8fhsdYFHr",
-            "name": "n8n free OpenAI API credits"
-          }
-        }
-      },
-      {
-        "parameters": {},
-        "id": "chat-trigger",
-        "name": "Chat Trigger",
-        "type": "@n8n/n8n-nodes-langchain.chatTrigger",
-        "typeVersion": 1.1,
-        "position": [
-          400,
-          300
-        ],
-        "webhookId": "mcp-agent-chat"
-      },
-      {
-        "parameters": {
-          "name": "Yahoo Finance Tool",
-          "description": "주식/금융 데이터 조회. 사용 가능 도구: get_quote(symbol), get_historical_data(symbol,period1,period2,interval), search_symbols(query), get_company_info(symbol), get_recommendations(symbol), get_trending_symbols(), get_market_summary(), get_news(query,newsCount), get_options(symbol). tool_name과 args를 JSON으로 전달.",
-          "language": "javaScript",
-          "jsCode": "async function mcpCall(port, toolName, toolArgs) {\n  const baseUrl = \"http://72.62.255.251:\" + port;\n  \n  // Step 1: Initialize and get session ID\n  const initResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/json\", \"Accept\": \"application/json\" },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 1, method: \"initialize\",\n      params: { protocolVersion: \"2024-11-05\", capabilities: {}, clientInfo: { name: \"n8n-ron\", version: \"1.0\" } }\n    })\n  });\n  const sessionId = initResp.headers.get(\"mcp-session-id\");\n  \n  // Step 2: Call tool\n  const callResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: {\n      \"Content-Type\": \"application/json\",\n      \"Accept\": \"application/json\",\n      \"Mcp-Session-Id\": sessionId\n    },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 2, method: \"tools/call\",\n      params: { name: toolName, arguments: toolArgs || {} }\n    })\n  });\n  const result = await callResp.json();\n  \n  if (result.error) return \"Error: \" + result.error.message;\n  if (result.result && result.result.content) {\n    return result.result.content.map(c => c.text || JSON.stringify(c)).join(\"\\n\");\n  }\n  return JSON.stringify(result.result);\n}\n\nconst input = $fromAI(\"tool_call\", \"JSON object with tool_name (string) and args (object)\", \"object\");\nconst toolName = input.tool_name || input.toolName;\nconst args = input.args || input.arguments || {};\nconst result = await mcpCall(3100, toolName, args);\nreturn result;"
-        },
-        "id": "tool-yf",
-        "name": "Yahoo Finance Tool",
-        "type": "@n8n/n8n-nodes-langchain.toolCode",
-        "typeVersion": 1.1,
-        "position": [
-          300,
-          520
-        ]
-      },
-      {
-        "parameters": {
-          "name": "Basic Memory Tool",
-          "description": "지식 저장/검색. 사용 가능 도구: write_note(title,content,folder), read_note(title), search_notes(query), list_notes(folder), delete_note(title). tool_name과 args를 JSON으로 전달.",
-          "language": "javaScript",
-          "jsCode": "async function mcpCall(port, toolName, toolArgs) {\n  const baseUrl = \"http://72.62.255.251:\" + port;\n  \n  // Step 1: Initialize and get session ID\n  const initResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/json\", \"Accept\": \"application/json\" },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 1, method: \"initialize\",\n      params: { protocolVersion: \"2024-11-05\", capabilities: {}, clientInfo: { name: \"n8n-ron\", version: \"1.0\" } }\n    })\n  });\n  const sessionId = initResp.headers.get(\"mcp-session-id\");\n  \n  // Step 2: Call tool\n  const callResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: {\n      \"Content-Type\": \"application/json\",\n      \"Accept\": \"application/json\",\n      \"Mcp-Session-Id\": sessionId\n    },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 2, method: \"tools/call\",\n      params: { name: toolName, arguments: toolArgs || {} }\n    })\n  });\n  const result = await callResp.json();\n  \n  if (result.error) return \"Error: \" + result.error.message;\n  if (result.result && result.result.content) {\n    return result.result.content.map(c => c.text || JSON.stringify(c)).join(\"\\n\");\n  }\n  return JSON.stringify(result.result);\n}\n\nconst input = $fromAI(\"tool_call\", \"JSON object with tool_name (string) and args (object)\", \"object\");\nconst toolName = input.tool_name || input.toolName;\nconst args = input.args || input.arguments || {};\nconst result = await mcpCall(3101, toolName, args);\nreturn result;"
-        },
-        "id": "tool-bm",
-        "name": "Basic Memory Tool",
-        "type": "@n8n/n8n-nodes-langchain.toolCode",
-        "typeVersion": 1.1,
-        "position": [
-          420,
-          520
-        ]
-      },
-      {
-        "parameters": {
-          "name": "Knowledge Graph Tool",
-          "description": "지식 그래프 관리. 사용 가능 도구: create_entities(entities), create_relations(relations), search_nodes(query), open_nodes(names), delete_entities(entityNames), read_graph(). tool_name과 args를 JSON으로 전달.",
-          "language": "javaScript",
-          "jsCode": "async function mcpCall(port, toolName, toolArgs) {\n  const baseUrl = \"http://72.62.255.251:\" + port;\n  \n  // Step 1: Initialize and get session ID\n  const initResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/json\", \"Accept\": \"application/json\" },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 1, method: \"initialize\",\n      params: { protocolVersion: \"2024-11-05\", capabilities: {}, clientInfo: { name: \"n8n-ron\", version: \"1.0\" } }\n    })\n  });\n  const sessionId = initResp.headers.get(\"mcp-session-id\");\n  \n  // Step 2: Call tool\n  const callResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: {\n      \"Content-Type\": \"application/json\",\n      \"Accept\": \"application/json\",\n      \"Mcp-Session-Id\": sessionId\n    },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 2, method: \"tools/call\",\n      params: { name: toolName, arguments: toolArgs || {} }\n    })\n  });\n  const result = await callResp.json();\n  \n  if (result.error) return \"Error: \" + result.error.message;\n  if (result.result && result.result.content) {\n    return result.result.content.map(c => c.text || JSON.stringify(c)).join(\"\\n\");\n  }\n  return JSON.stringify(result.result);\n}\n\nconst input = $fromAI(\"tool_call\", \"JSON object with tool_name (string) and args (object)\", \"object\");\nconst toolName = input.tool_name || input.toolName;\nconst args = input.args || input.arguments || {};\nconst result = await mcpCall(3102, toolName, args);\nreturn result;"
-        },
-        "id": "tool-mem",
-        "name": "Knowledge Graph Tool",
-        "type": "@n8n/n8n-nodes-langchain.toolCode",
-        "typeVersion": 1.1,
-        "position": [
-          540,
-          520
-        ]
-      },
-      {
-        "parameters": {
-          "name": "Web Fetch Tool",
-          "description": "웹 페이지 조회. 사용 가능 도구: fetch(url, max_length, start_index, raw). tool_name='fetch'와 args를 JSON으로 전달.",
-          "language": "javaScript",
-          "jsCode": "async function mcpCall(port, toolName, toolArgs) {\n  const baseUrl = \"http://72.62.255.251:\" + port;\n  \n  // Step 1: Initialize and get session ID\n  const initResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/json\", \"Accept\": \"application/json\" },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 1, method: \"initialize\",\n      params: { protocolVersion: \"2024-11-05\", capabilities: {}, clientInfo: { name: \"n8n-ron\", version: \"1.0\" } }\n    })\n  });\n  const sessionId = initResp.headers.get(\"mcp-session-id\");\n  \n  // Step 2: Call tool\n  const callResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: {\n      \"Content-Type\": \"application/json\",\n      \"Accept\": \"application/json\",\n      \"Mcp-Session-Id\": sessionId\n    },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 2, method: \"tools/call\",\n      params: { name: toolName, arguments: toolArgs || {} }\n    })\n  });\n  const result = await callResp.json();\n  \n  if (result.error) return \"Error: \" + result.error.message;\n  if (result.result && result.result.content) {\n    return result.result.content.map(c => c.text || JSON.stringify(c)).join(\"\\n\");\n  }\n  return JSON.stringify(result.result);\n}\n\nconst input = $fromAI(\"tool_call\", \"JSON object with tool_name (string) and args (object)\", \"object\");\nconst toolName = input.tool_name || input.toolName;\nconst args = input.args || input.arguments || {};\nconst result = await mcpCall(3103, toolName, args);\nreturn result;"
-        },
-        "id": "tool-fetch",
-        "name": "Web Fetch Tool",
-        "type": "@n8n/n8n-nodes-langchain.toolCode",
-        "typeVersion": 1.1,
-        "position": [
-          660,
-          520
-        ]
-      },
-      {
-        "parameters": {
-          "name": "Obsidian Vault Tool",
-          "description": "Obsidian 지식 볼트 관리. 사용 가능 도구: search-vault(vault,query), create-note(vault,path,content,tags), edit-note(vault,path,content), list-available-vaults(), move-note(vault,oldPath,newPath), delete-note(vault,path), add-tags(vault,path,tags), remove-tags(vault,path,tags). vault='obsidian-vault-data'. tool_name과 args를 JSON으로 전달.",
-          "language": "javaScript",
-          "jsCode": "async function mcpCall(port, toolName, toolArgs) {\n  const baseUrl = \"http://72.62.255.251:\" + port;\n  \n  // Step 1: Initialize and get session ID\n  const initResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/json\", \"Accept\": \"application/json\" },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 1, method: \"initialize\",\n      params: { protocolVersion: \"2024-11-05\", capabilities: {}, clientInfo: { name: \"n8n-ron\", version: \"1.0\" } }\n    })\n  });\n  const sessionId = initResp.headers.get(\"mcp-session-id\");\n  \n  // Step 2: Call tool\n  const callResp = await fetch(baseUrl + \"/mcp\", {\n    method: \"POST\",\n    headers: {\n      \"Content-Type\": \"application/json\",\n      \"Accept\": \"application/json\",\n      \"Mcp-Session-Id\": sessionId\n    },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\", id: 2, method: \"tools/call\",\n      params: { name: toolName, arguments: toolArgs || {} }\n    })\n  });\n  const result = await callResp.json();\n  \n  if (result.error) return \"Error: \" + result.error.message;\n  if (result.result && result.result.content) {\n    return result.result.content.map(c => c.text || JSON.stringify(c)).join(\"\\n\");\n  }\n  return JSON.stringify(result.result);\n}\n\nconst input = $fromAI(\"tool_call\", \"JSON object with tool_name (string) and args (object)\", \"object\");\nconst toolName = input.tool_name || input.toolName;\nconst args = input.args || input.arguments || {};\nconst result = await mcpCall(3104, toolName, args);\nreturn result;"
-        },
-        "id": "tool-obs",
-        "name": "Obsidian Vault Tool",
-        "type": "@n8n/n8n-nodes-langchain.toolCode",
-        "typeVersion": 1.1,
-        "position": [
-          780,
-          520
-        ]
-      }
-    ],
-    "connections": {
-      "Chat Trigger": {
-        "main": [
-          [
-            {
-              "node": "AI Agent",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "OpenAI Chat Model": {
-        "ai_languageModel": [
-          [
-            {
-              "node": "AI Agent",
-              "type": "ai_languageModel",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Yahoo Finance Tool": {
-        "ai_tool": [
-          [
-            {
-              "node": "AI Agent",
-              "type": "ai_tool",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Basic Memory Tool": {
-        "ai_tool": [
-          [
-            {
-              "node": "AI Agent",
-              "type": "ai_tool",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Knowledge Graph Tool": {
-        "ai_tool": [
-          [
-            {
-              "node": "AI Agent",
-              "type": "ai_tool",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Web Fetch Tool": {
-        "ai_tool": [
-          [
-            {
-              "node": "AI Agent",
-              "type": "ai_tool",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Obsidian Vault Tool": {
-        "ai_tool": [
-          [
-            {
-              "node": "AI Agent",
-              "type": "ai_tool",
-              "index": 0
-            }
-          ]
-        ]
-      }
-    },
-    "authors": "Choi  ",
-    "name": null,
-    "description": null,
-    "autosaved": false,
-    "workflowPublishHistory": [
-      {
-        "createdAt": "2026-02-02T10:39:42.585Z",
-        "id": 18,
-        "workflowId": "2u3IEwTXbPa58Tyw",
-        "versionId": "c99e4396-3cde-480e-9859-42313de1f918",
-        "event": "activated",
-        "userId": "d31cb0af-0762-4748-bf1c-ad433f671136"
-      }
-    ]
   }
 }
