@@ -184,9 +184,10 @@ clone_openclaw() {
 configure_env() {
     log_info "Step 5/7: Configuring environment..."
 
-    # Create config directories
+    # Create config directories with UID 1000 ownership (matches container's 'node' user)
     mkdir -p /home/$OPENCLAW_USER/.openclaw/workspace
-    chown -R $OPENCLAW_USER:$OPENCLAW_USER /home/$OPENCLAW_USER/.openclaw
+    chown -R 1000:1000 /home/$OPENCLAW_USER/.openclaw
+    chmod -R 755 /home/$OPENCLAW_USER/.openclaw
 
     # Generate gateway token
     GATEWAY_TOKEN=$(openssl rand -hex 32)
