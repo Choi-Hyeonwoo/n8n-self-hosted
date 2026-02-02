@@ -16,8 +16,8 @@ services:
       - OPENCLAW_WORKSPACE_DIR=/home/node/.openclaw/workspace
       - NODE_ENV=production
     volumes:
-      - ${OPENCLAW_HOST_CONFIG_DIR}:/home/node/.openclaw
-      - ${OPENCLAW_HOST_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
     ports:
       - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
       - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
@@ -45,8 +45,8 @@ services:
       - OPENCLAW_CONFIG_DIR=/home/node/.openclaw
       - OPENCLAW_WORKSPACE_DIR=/home/node/.openclaw/workspace
     volumes:
-      - ${OPENCLAW_HOST_CONFIG_DIR}:/home/node/.openclaw
-      - ${OPENCLAW_HOST_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
     stdin_open: true
     tty: true
     command: ["node", "dist/index.js", "cli"]

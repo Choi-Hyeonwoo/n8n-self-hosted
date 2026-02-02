@@ -212,9 +212,9 @@ OPENCLAW_IMAGE=openclaw:local
 OPENCLAW_GATEWAY_PORT=${OPENCLAW_GATEWAY_PORT}
 OPENCLAW_BRIDGE_PORT=${OPENCLAW_BRIDGE_PORT}
 
-# Host paths for volume mounts
-OPENCLAW_HOST_CONFIG_DIR=/home/${OPENCLAW_USER}/.openclaw
-OPENCLAW_HOST_WORKSPACE_DIR=/home/${OPENCLAW_USER}/.openclaw/workspace
+# Host paths for volume mounts (used by repo's docker-compose.yml)
+OPENCLAW_CONFIG_DIR=/home/${OPENCLAW_USER}/.openclaw
+OPENCLAW_WORKSPACE_DIR=/home/${OPENCLAW_USER}/.openclaw/workspace
 
 # Container user mapping
 OPENCLAW_UID=${OPENCLAW_UID}
