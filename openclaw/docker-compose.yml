@@ -9,14 +9,19 @@ services:
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - CLAUDE_AI_SESSION_KEY=${CLAUDE_AI_SESSION_KEY:-}
+      - CLAUDE_WEB_SESSION_KEY=${CLAUDE_WEB_SESSION_KEY:-}
+      - CLAUDE_WEB_COOKIE=${CLAUDE_WEB_COOKIE:-}
+      - OPENCLAW_CONFIG_DIR=/home/node/.openclaw
+      - OPENCLAW_WORKSPACE_DIR=/home/node/.openclaw/workspace
       - NODE_ENV=production
     volumes:
-      - ${HOME}/.openclaw:/home/node/.openclaw
-      - ${HOME}/.openclaw/workspace:/home/node/.openclaw/workspace
+      - ${OPENCLAW_HOST_CONFIG_DIR}:/home/node/.openclaw
+      - ${OPENCLAW_HOST_WORKSPACE_DIR}:/home/node/.openclaw/workspace
     ports:
       - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
       - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
-    user: "1000:1000"
+    user: "${OPENCLAW_UID:-1000}:${OPENCLAW_GID:-1000}"
     command: ["node", "dist/index.js", "gateway"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:18789/health"]
@@ -34,9 +39,14 @@ services:
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - CLAUDE_AI_SESSION_KEY=${CLAUDE_AI_SESSION_KEY:-}
+      - CLAUDE_WEB_SESSION_KEY=${CLAUDE_WEB_SESSION_KEY:-}
+      - CLAUDE_WEB_COOKIE=${CLAUDE_WEB_COOKIE:-}
+      - OPENCLAW_CONFIG_DIR=/home/node/.openclaw
+      - OPENCLAW_WORKSPACE_DIR=/home/node/.openclaw/workspace
     volumes:
-      - ${HOME}/.openclaw:/home/node/.openclaw
-      - ${HOME}/.openclaw/workspace:/home/node/.openclaw/workspace
+      - ${OPENCLAW_HOST_CONFIG_DIR}:/home/node/.openclaw
+      - ${OPENCLAW_HOST_WORKSPACE_DIR}:/home/node/.openclaw/workspace
     stdin_open: true
     tty: true
     command: ["node", "dist/index.js", "cli"]

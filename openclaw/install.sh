@@ -199,6 +199,10 @@ configure_env() {
         cp "$ENV_FILE" "${ENV_FILE}.backup"
     fi
 
+    # Get openclaw user UID/GID
+    OPENCLAW_UID=$(id -u $OPENCLAW_USER)
+    OPENCLAW_GID=$(id -g $OPENCLAW_USER)
+
     cat > "$ENV_FILE" <<EOF
 # OpenClaw Environment Configuration
 # Generated on $(date -u +"%Y-%m-%d %H:%M:%S UTC")
@@ -207,6 +211,19 @@ OPENCLAW_GATEWAY_TOKEN=${GATEWAY_TOKEN}
 OPENCLAW_IMAGE=openclaw:local
 OPENCLAW_GATEWAY_PORT=${OPENCLAW_GATEWAY_PORT}
 OPENCLAW_BRIDGE_PORT=${OPENCLAW_BRIDGE_PORT}
+
+# Host paths for volume mounts
+OPENCLAW_HOST_CONFIG_DIR=/home/${OPENCLAW_USER}/.openclaw
+OPENCLAW_HOST_WORKSPACE_DIR=/home/${OPENCLAW_USER}/.openclaw/workspace
+
+# Container user mapping
+OPENCLAW_UID=${OPENCLAW_UID}
+OPENCLAW_GID=${OPENCLAW_GID}
+
+# Session keys (optional, leave blank if not used)
+CLAUDE_AI_SESSION_KEY=
+CLAUDE_WEB_SESSION_KEY=
+CLAUDE_WEB_COOKIE=
 EOF
 
     chown $OPENCLAW_USER:$OPENCLAW_USER "$ENV_FILE"
