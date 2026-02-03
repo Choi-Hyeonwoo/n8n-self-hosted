@@ -1,0 +1,9 @@
+# Runtime state (not to be committed)
+.brain/
+
+# Logs
+*.log
+
+# Environment files with secrets
+*.env
+!*.env.example
