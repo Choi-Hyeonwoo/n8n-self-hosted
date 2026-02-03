@@ -6,7 +6,7 @@ TIMEFOLIO ETF Holdings Tracker v11
 - 비중 변동·뉴스 분석 모두 1D 기준 (d1_map)
 - 1D/1W: pdfDate로 실제 과거 날짜 holdings 가져와서 비교
 - 1M: pdfM1 AJAX (timeetf 1개월 전 비교, Holdings 테이블용)
-- v11: 칼럼 라벨 상단 1회만, By Investing.com 제거, 현금 회색, 신규편입 전체 표시
+- v11: 칼럼 라벨 상단 1회만, By Investing.com 제거, 현금 회색, 신규편입 1D기준 전체 표시
 """
 
 import urllib.request
@@ -1139,14 +1139,24 @@ def run(etf_keys=None, generate_images=True):
             current_dot = page_date.replace("-", ".")
             d1_date, w1_date = find_comparison_dates(avail_dates, current_dot)
 
-            # 1D comparison (primary basis for changes & movers)
+            # 1D comparison (primary basis for changes & movers & 신규편입)
             d1_map = {}
             d1_holdings = None
+            d1_news = []  # 1D 신규편입
             if d1_date:
                 d1_html = fetch_page_for_date(cfg["idx"], cfg["cate"], d1_date)
                 if d1_html:
                     d1_holdings = parse_full_holdings(d1_html)
-                    d1_map = build_diff_map_from_weights(holdings, build_weight_map(d1_holdings))
+                    d1_weight_map = build_weight_map(d1_holdings)
+                    d1_map = build_diff_map_from_weights(holdings, d1_weight_map)
+                    # Detect 1D 신규편입: stocks in current but not in d1
+                    for h in holdings:
+                        if h["name"] not in d1_weight_map and h["name"] != "현금":
+                            d1_news.append({
+                                "name": h["name"],
+                                "weight": h["weight"],
+                                "ticker": h.get("ticker", ""),
+                            })
 
             # 1W comparison
             w1_map = {}
@@ -1250,8 +1260,8 @@ def run(etf_keys=None, generate_images=True):
                         "is_new": False,
                     })
 
-            # 신규편입 stocks (from m1) - show all
-            for item in m1_news:
+            # 신규편입 stocks (1D basis) - show all
+            for item in d1_news:
                 news_items = fetch_stock_news(item["name"], limit=3)
                 analysis = analyze_headlines(news_items, 0,
                                             stock_name=item["name"], is_new=True)
