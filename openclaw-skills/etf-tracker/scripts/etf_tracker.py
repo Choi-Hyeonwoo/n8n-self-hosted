@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-TIMEFOLIO ETF Holdings Tracker v11
+TIMEFOLIO ETF Holdings Tracker v12
 - Page 1: ETF별 1일 비중 변동 TOP 5 / BOTTOM 3 + Holdings TOP 10 통합
 - Page 2: 주요 종목 뉴스 분석 (원인 2줄 + 판단 1줄, 결과성 기사 제외)
 - 비중 변동·뉴스 분석 모두 1D 기준 (d1_map)
 - 1D/1W: pdfDate로 실제 과거 날짜 holdings 가져와서 비교
 - 1M: pdfM1 AJAX (timeetf 1개월 전 비교, Holdings 테이블용)
 - v11: 칼럼 라벨 상단 1회만, By Investing.com 제거, 현금 회색, 신규편입 1D기준 전체 표시
+- v12: Claude API를 활용한 Deep Research 분석 (복합적 종목 분석)
 """
 
 import urllib.request
@@ -27,6 +28,13 @@ try:
     HAS_MPL = True
 except ImportError:
     HAS_MPL = False
+
+# ─── Claude API support (for deep research) ────────────────────────
+try:
+    import anthropic
+    HAS_CLAUDE = True
+except ImportError:
+    HAS_CLAUDE = False
 
 FONT_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
 FONT_BOLD_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
@@ -706,6 +714,121 @@ _IB_NAMES = [
     "LS증권", "BNK투자증권", "DB금융투자", "하이투자증권", "iM증권",
 ]
 
+# ─── Stock Profile Database (for deep research) ──────────────────────
+_STOCK_PROFILES = {
+    # 반도체/메모리
+    "Sandisk": "Pure-play NAND 플래시 전문기업. WD 합병 후 분사. 엔터프라이즈 SSD, 데이터센터 스토리지 강점",
+    "Micron": "DRAM/NAND 메모리 반도체. HBM(고대역폭메모리) AI 수혜주. 데이터센터 핵심 공급사",
+    "SK하이닉스": "HBM 세계 1위. AI 가속기용 메모리 핵심 공급. 엔비디아 주요 파트너",
+    "NVIDIA": "AI GPU 절대 강자. 데이터센터 AI 가속기 시장 90%+ 점유. Blackwell/Hopper 아키텍처",
+    "TSMC": "파운드리 세계 1위. 첨단 공정(3nm/2nm) 독점. 애플/엔비디아/AMD 생산",
+    "Western Digital": "HDD/SSD 스토리지. 데이터센터 대용량 저장장치. Sandisk와 합병했다 분리",
+    "Seagate": "HDD 세계 1위. 데이터센터 대용량 스토리지 전문",
+    "Intel": "CPU 레거시 강자. 파운드리 사업 진출. AI PC 시장 공략",
+    "AMD": "CPU/GPU 2위. 데이터센터 EPYC 프로세서. MI300 AI 가속기",
+    "ASML": "EUV 노광장비 독점. 반도체 장비 핵심. TSMC/삼성 필수 장비",
+    "Nanya": "대만 DRAM 전문. 범용 DRAM, DDR5 생산. 가격 민감도 높음",
+    "Powerchip": "대만 파운드리. 성숙 공정 특화. 전력반도체, 디스플레이 드라이버",
+    # AI/소프트웨어
+    "Alphabet": "구글 모회사. 검색/광고/클라우드. Gemini AI 모델. 자율주행 Waymo",
+    "Meta Platforms": "메타버스/소셜미디어. 페이스북/인스타그램. Llama AI 모델",
+    "Tesla": "EV 선두주자. 자율주행 FSD. 로보택시, 옵티머스 휴머노이드",
+    "Palantir": "빅데이터 분석 플랫폼. 정부/기업 AI 솔루션. AIP 플랫폼",
+    # 바이오/헬스케어
+    "에이비엘바이오": "이중항체 플랫폼 Grabody. 사노피/BMS와 기술이전 계약",
+    "삼천당제약": "비만치료제 파이프라인. GLP-1 기반 신약 개발",
+    "에이프릴바이오": "SAFA 플랫폼 기반 DDS 기술. 항체-약물 접합체",
+    "셀트리온": "바이오시밀러 글로벌 1위급. 자가면역질환 치료제",
+    "리가켐바이오": "ADC(항체약물접합체) 전문. 글로벌 기술이전 활발",
+    "HLB": "항암제 리보세라닙. FDA 승인 추진. 간암 치료제",
+    # 에너지/인프라
+    "Bloom Energy": "SOFC 연료전지. 데이터센터 전력공급. 친환경 에너지",
+    "GE Vernova": "GE 에너지 부문 분사. 가스터빈, 풍력, 전력망",
+    "Cameco": "우라늄 채굴 글로벌 1위. 원자력 발전 수혜. SMR 테마",
+    # 엔터테인먼트/컬처
+    "하이브": "BTS 소속사. K-POP 글로벌 1위. 위버스 플랫폼",
+    "펄어비스": "검은사막 개발사. 붉은사막 신작 출시 예정",
+    "삼양식품": "불닭볶음면 글로벌 히트. K푸드 대표주",
+    # 기타
+    "Rocket Lab": "소형 위성 발사체. 스페이스X 대항마. Neutron 로켓 개발",
+    "UBTech": "휴머노이드 로봇. Walker 시리즈. 중국 로봇 선두",
+    "Hesai": "라이다 센서. 자율주행 핵심 부품. 중국 라이다 1위",
+}
+
+
+def _get_stock_profile(name):
+    """Get stock profile for deep research."""
+    for key, profile in _STOCK_PROFILES.items():
+        if key.lower() in name.lower() or key in name:
+            return profile
+    return None
+
+
+def deep_research_analysis(etf_name, movers, per_etf_changes):
+    """Use Claude API to generate deep research analysis for ETF."""
+    if not HAS_CLAUDE:
+        return None
+
+    # Build context for Claude
+    mover_details = []
+    for m in movers[:5]:  # Top 5 movers
+        profile = _get_stock_profile(m["name"])
+        news_titles = [n.get("title", "") for n in m.get("news_items", [])[:3]]
+        analysis = m.get("analysis", {})
+
+        detail = {
+            "name": m["name"],
+            "ticker": m.get("ticker", ""),
+            "weight": m["weight"],
+            "diff": m.get("diff", 0),
+            "is_new": m.get("is_new", False),
+            "profile": profile,
+            "news": news_titles,
+            "basic_analysis": analysis,
+        }
+        mover_details.append(detail)
+
+    # Find ups/downs from changes
+    changes = None
+    for c in per_etf_changes:
+        if c["etf_name"] == etf_name:
+            changes = c
+            break
+
+    prompt = f"""당신은 TIMEFOLIO ETF 포트폴리오 분석 전문가입니다.
+
+## ETF: {etf_name}
+
+## 주요 비중 변동 종목:
+"""
+    for d in mover_details:
+        direction = "신규편입" if d["is_new"] else (f"+{d['diff']:.2f}%p 증가" if d["diff"] > 0 else f"{d['diff']:.2f}%p 감소")
+        prompt += f"""
+### {d['name']} ({d['ticker']}) - {direction}, 현재 비중 {d['weight']:.1f}%
+- 종목 특성: {d['profile'] or '정보 없음'}
+- 관련 뉴스: {'; '.join(d['news']) if d['news'] else '뉴스 없음'}
+"""
+
+    prompt += """
+## 분석 요청:
+위 정보를 바탕으로 각 종목별로 다음 형식으로 복합적 분석을 작성해주세요:
+
+1. **[종목명]**: [종목의 사업 특성], [최근 뉴스/실적/업황]을 고려해 [비중 확대/축소/편입] 판단. [구체적 사유 1-2문장]
+
+전체를 3-4개 종목으로 요약하고, 마지막에 ETF 전체 포트폴리오 방향성을 1문장으로 정리해주세요.
+이모지 없이, 간결하게 작성하세요."""
+
+    try:
+        client = anthropic.Anthropic()
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=800,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return message.content[0].text
+    except Exception as e:
+        return f"Deep research 실패: {e}"
+
 
 def _clean_stock_name(name):
     for eng, kr in _KR_ALIASES.items():
@@ -1104,44 +1227,60 @@ def build_text_report(group_label, date, per_etf_changes,
     return "\n".join(lines)
 
 
+def _build_basic_etf_analysis(changes, movers):
+    """Fallback basic analysis when Claude API is not available."""
+    lines = []
+    ups = changes.get("ups", [])
+    downs = changes.get("downs", [])
+
+    if ups:
+        top_up = ups[0]
+        lines.append(f"• 최대 증가: {top_up['name']} (+{top_up['diff']:.2f}%p)")
+    if downs:
+        top_down = downs[0]
+        lines.append(f"• 최대 감소: {top_down['name']} ({top_down['diff']:.2f}%p)")
+
+    new_stocks = [m for m in movers if m.get("is_new")]
+    if new_stocks:
+        new_names = ", ".join([s["name"][:10] for s in new_stocks[:3]])
+        lines.append(f"• 신규편입: {new_names}")
+
+    key_judgments = []
+    for m in movers[:2]:
+        analysis = m.get("analysis", {})
+        if isinstance(analysis, dict):
+            jd = analysis.get("judgment", "")
+            if jd and "→" in jd:
+                key_judgments.append(jd.split("→")[0].strip())
+    if key_judgments:
+        lines.append(f"• 주요 사유: {'; '.join(key_judgments[:2])}")
+
+    return "\n".join(lines)
+
+
 # ─── Deep Analysis Summary ────────────────────────────────────────────
-def build_analysis_summary(group_label, date, per_etf_changes, per_etf_news):
-    """Generate deep analysis summary for Telegram message."""
+def build_analysis_summary(group_label, date, per_etf_changes, per_etf_news, use_deep_research=True):
+    """Generate deep analysis summary for Telegram message with Claude API deep research."""
     lines = [f"📊 TIMEFOLIO {group_label} ETF 분석 리포트", f"📅 {date}", ""]
 
-    # Analyze each ETF
+    # Deep research for each ETF
     for i, (changes, news) in enumerate(zip(per_etf_changes, per_etf_news)):
         etf_name = changes["etf_name"]
-        ups = changes.get("ups", [])
-        downs = changes.get("downs", [])
         movers = news.get("movers", [])
 
         lines.append(f"▶ {etf_name}")
+        lines.append("")
 
-        # Key changes summary
-        if ups:
-            top_up = ups[0]
-            lines.append(f"  • 최대 증가: {top_up['name']} (+{top_up['diff']:.2f}%p)")
-        if downs:
-            top_down = downs[0]
-            lines.append(f"  • 최대 감소: {top_down['name']} ({top_down['diff']:.2f}%p)")
-
-        # New additions
-        new_stocks = [m for m in movers if m.get("is_new")]
-        if new_stocks:
-            new_names = ", ".join([s["name"][:8] for s in new_stocks[:3]])
-            lines.append(f"  • 신규편입: {new_names}")
-
-        # Key analysis from movers
-        key_judgments = []
-        for m in movers[:2]:
-            analysis = m.get("analysis", {})
-            if isinstance(analysis, dict):
-                jd = analysis.get("judgment", "")
-                if jd and "→" in jd:
-                    key_judgments.append(jd.split("→")[0].strip())
-        if key_judgments:
-            lines.append(f"  • 주요 사유: {'; '.join(key_judgments[:2])}")
+        # Use Claude API for deep research
+        if use_deep_research and HAS_CLAUDE and movers:
+            deep_analysis = deep_research_analysis(etf_name, movers, per_etf_changes)
+            if deep_analysis and not deep_analysis.startswith("Deep research 실패"):
+                lines.append(deep_analysis)
+            else:
+                # Fallback to basic analysis
+                lines.append(_build_basic_etf_analysis(changes, movers))
+        else:
+            lines.append(_build_basic_etf_analysis(changes, movers))
 
         lines.append("")
 
