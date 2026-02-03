@@ -1,0 +1,9 @@
+[Unit]
+Description=ETF Tracker 해외 스케줄 (화~토 08:00 KST)
+
+[Timer]
+OnCalendar=Tue..Sat 08:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
