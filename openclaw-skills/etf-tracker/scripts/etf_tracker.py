@@ -452,7 +452,8 @@ def render_page_changes(group_label, date, per_etf_changes):
     y = _draw_section(y, "비중 감소 BOTTOM 3", "#1565C0", "#F5F8FF", n_downs,
                        lambda e: e["downs"][:3], lambda v: "#1565C0")
 
-    path = os.path.join(IMG_DIR, f"etf_p1_changes_{date}.png")
+    glabel = group_label.replace(" ", "")
+    path = os.path.join(IMG_DIR, f"etf_p1_{glabel}_{date}.png")
     fig.savefig(path, dpi=150, bbox_inches="tight", facecolor="white", pad_inches=0.1)
     plt.close(fig)
     return path
@@ -479,8 +480,17 @@ def render_page_holdings_news(group_label, date, etf_sections, per_etf_news):
     fig_w = left_w + right_w + 0.6  # 15.8
 
     n_sects = len(etf_sections)
-    total_rows = sum(len(s["rows"]) for s in etf_sections)
-    fig_h = (0.7 + n_sects * (sect_head_h + col_head_h) + total_rows * row_h
+    section_content_heights = []
+    for si, sect in enumerate(etf_sections):
+        left_h = col_head_h + len(sect["rows"]) * row_h
+        right_h = 0
+        if si < len(per_etf_news):
+            for m in per_etf_news[si].get("movers", []):
+                right_h += news_line_h  # header
+                right_h += min(len(m.get("news_items", [])), 2) * news_line_h
+                right_h += news_line_h + 0.06  # analysis + padding
+        section_content_heights.append(max(left_h, right_h))
+    fig_h = (0.7 + n_sects * sect_head_h + sum(section_content_heights)
              + (n_sects - 1) * spacing + 0.4)
 
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
@@ -542,6 +552,8 @@ def render_page_holdings_news(group_label, date, etf_sections, per_etf_news):
                     ha="center", va="center", color="#333", zorder=3)
             for k in ("d1", "w1", "m1"):
                 ds = _diff_str(row[k])
+                if ds != "-" and ds != "NEW":
+                    ds += "%p"
                 ax.text(lx[k], y, ds, fontproperties=font_small,
                         ha="center", va="center", color=_diff_color(row[k]), zorder=3)
             y -= row_h
@@ -554,7 +566,7 @@ def render_page_holdings_news(group_label, date, etf_sections, per_etf_news):
         # Right: news for this ETF's movers
         ny = section_top_y
         etf_news = per_etf_news[si] if si < len(per_etf_news) else {"movers": []}
-        movers = etf_news.get("movers", [])[:3]
+        movers = etf_news.get("movers", [])
 
         for mi, m in enumerate(movers):
             dc = "#D32F2F" if m["diff"] > 0 else "#1565C0"
@@ -586,17 +598,21 @@ def render_page_holdings_news(group_label, date, etf_sections, per_etf_news):
 
             # Analysis
             analysis = m.get("analysis", "")
-            if len(analysis) > 40:
-                analysis = analysis[:38] + ".."
+            if len(analysis) > 55:
+                analysis = analysis[:53] + ".."
             ax.text(rx_start + 0.15, ny, f"-> {analysis}",
                     fontproperties=font_news, ha="left", va="center",
                     color=dc, zorder=3)
             ny -= news_line_h + 0.06
 
+        # Use the lower of left/right panel ends
+        y = min(y, ny)
+
         if si < n_sects - 1:
             y -= spacing
 
-    path = os.path.join(IMG_DIR, f"etf_p2_holdings_{date}.png")
+    glabel = group_label.replace(" ", "")
+    path = os.path.join(IMG_DIR, f"etf_p2_{glabel}_{date}.png")
     fig.savefig(path, dpi=150, bbox_inches="tight", facecolor="white", pad_inches=0.1)
     plt.close(fig)
     return path
@@ -648,6 +664,8 @@ def _strip_html(text):
     text = re.sub(r'<[^>]+>', '', text)
     text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
     text = text.replace("&quot;", '"').replace("&#39;", "'").replace("&apos;", "'")
+    # Strip emojis and special unicode symbols
+    text = re.sub(r'[\U00010000-\U0010FFFF]', '', text)
     return text.strip()
 
 
@@ -656,6 +674,33 @@ def _extract_ib(headline):
         if ib in headline:
             return ib
     return None
+
+
+_NOISE_PATTERNS = [
+    r'장중\s*(\d+|강세|약세|상승|하락)',
+    r'전일\s*대비\s*\d+',
+    r'\d+(\.\d+)?%\s*(상승|하락|급등|급락|↑|↓)',
+    r'(상승|하락|보합)\s*(출발|마감|세)',
+    r'시초가',
+    r'^\d+원\s*(대|에|선|돌파)',
+    r'소폭\s*(상승|하락|반등)',
+    r'(약보합|강보합|보합세)',
+    r'전장\s*대비',
+    r'52주\s*(신고가|신저가|최고가|최저가)',
+    r'\d+거래일\s*(연속|만에)',
+    r'(개장|장초)\s*(상승|하락|강세|약세)',
+    r'종가\s*\d+',
+    r'낙폭\s*과대',
+    r'주가\s*\d+%',
+]
+
+
+def _is_noise_headline(title):
+    """Filter out meaningless price-movement headlines."""
+    for pat in _NOISE_PATTERNS:
+        if re.search(pat, title):
+            return True
+    return False
 
 
 def fetch_stock_news(name, limit=2):
@@ -670,7 +715,7 @@ def fetch_stock_news(name, limit=2):
             xml = resp.read().decode("utf-8")
         items = re.findall(r'<item>(.*?)</item>', xml, re.DOTALL)
         results = []
-        for item_xml in items[:limit + 4]:
+        for item_xml in items[:limit + 10]:
             title_m = re.search(r'<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>', item_xml)
             source_m = re.search(r'<source[^>]*>(.*?)</source>', item_xml)
             if not title_m:
@@ -679,6 +724,8 @@ def fetch_stock_news(name, limit=2):
             source = _strip_html(source_m.group(1)) if source_m else ""
             title = re.sub(r'\s*-\s*[^-]{2,30}$', '', raw_title)
             if not title or len(title) <= 5:
+                continue
+            if _is_noise_headline(title):
                 continue
             ib = _extract_ib(raw_title)
             results.append({"title": title, "source": source, "ib": ib})
@@ -730,6 +777,24 @@ KEYWORD_RULES = [
     (["수출", "환율", "진출", "해외", "글로벌"],
      "해외 시장 확대/수출 호조 → 비중 확대",
      "수출 둔화/환율 악재 → 비중 축소"),
+    (["로봇", "휴머노이드", "로보틱스", "자율주행", "무인"],
+     "로봇/자율화 성장 기대 → 비중 확대",
+     "로봇/자율화 성장 둔화 우려 → 비중 축소"),
+    (["K뷰티", "화장품", "뷰티", "스킨케어"],
+     "K뷰티 수출 확대/트렌드 수혜 → 비중 확대",
+     "K뷰티 성장 둔화 → 비중 축소"),
+    (["우주", "위성", "발사", "SpaceX", "스페이스"],
+     "우주/방산 사업 확대 → 비중 확대",
+     "우주 사업 불확실성 → 비중 축소"),
+    (["광모듈", "광트랜시버", "통신장비", "네트워크"],
+     "AI 인프라/광통신 수요 확대 → 비중 확대",
+     "광통신 수요 둔화/경쟁 심화 → 비중 축소"),
+    (["배터리", "리튬", "2차전지", "양극재", "음극재", "전해질"],
+     "배터리/2차전지 시장 확대 → 비중 확대",
+     "배터리 수요 둔화/원자재 부담 → 비중 축소"),
+    (["방산", "방위", "무기", "국방", "미사일", "천무"],
+     "방산 수출 확대/지정학 수혜 → 비중 확대",
+     "방산 수주 감소 → 비중 축소"),
 ]
 
 
@@ -741,7 +806,7 @@ def analyze_headlines(news_items, diff):
     for keywords, pos_a, neg_a in KEYWORD_RULES:
         if any(kw in combined for kw in keywords):
             return pos_a if diff > 0 else neg_a
-    short = headlines[0][:40]
+    short = headlines[0][:45]
     return f"{short} → 비중 확대" if diff > 0 else f"{short} → 비중 축소"
 
 
@@ -893,10 +958,12 @@ def run(etf_keys=None, generate_images=True):
             })
 
             # Page 2 right: per-ETF top movers with news
+            is_overseas = key in OVERSEAS_KEYS
+            n_movers = 5 if is_overseas else 3
             etf_movers_raw = sorted(
                 m1_ups[:5] + m1_downs[:3],
                 key=lambda x: abs(x["diff"]), reverse=True
-            )[:3]
+            )[:n_movers]
             etf_movers = []
             for item in etf_movers_raw:
                 news_items = fetch_stock_news(item["name"], limit=2)
@@ -951,13 +1018,22 @@ def run(etf_keys=None, generate_images=True):
 if __name__ == "__main__":
     args = sys.argv[1:]
     if args == ["overseas"] or args == ["\ud574\uc678"]:
-        keys = OVERSEAS_KEYS
+        report, images = run(OVERSEAS_KEYS)
+        print(report)
+        if images:
+            print(f"\nImages: {', '.join(images)}")
     elif args == ["domestic"] or args == ["\uad6d\ub0b4"]:
-        keys = DOMESTIC_KEYS
+        report, images = run(DOMESTIC_KEYS)
+        print(report)
+        if images:
+            print(f"\nImages: {', '.join(images)}")
     else:
-        keys = args if args else None
-
-    report, images = run(keys)
-    print(report)
-    if images:
-        print(f"\nImages: {', '.join(images)}")
+        # Run both groups separately
+        all_images = []
+        for group_keys in [DOMESTIC_KEYS, OVERSEAS_KEYS]:
+            report, images = run(group_keys)
+            print(report)
+            print()
+            all_images.extend(images)
+        if all_images:
+            print(f"\nAll Images: {', '.join(all_images)}")
