@@ -111,3 +111,16 @@ Ron:
 - `/home/user/n8n-self-hosted/openclaw-skills/` - 스킬별 가이드
 - `/home/user/n8n-self-hosted/openclaw/` - 시스템 설정
 - Obsidian Vault - 축적된 지식
+
+## 컨테이너 내부 경로 (Docker)
+OpenClaw 컨테이너 내부에서는 다음 경로로 접근:
+| 호스트 경로 | 컨테이너 경로 |
+|------------|--------------|
+| `/home/user/n8n-self-hosted/openclaw-skills/` | `/home/node/skills/` |
+| `${OPENCLAW_CONFIG_DIR}` | `/home/node/.openclaw/` |
+| `${OPENCLAW_WORKSPACE_DIR}` | `/home/node/.openclaw/workspace/` |
+
+### ETF Tracker 핵심 파일 (컨테이너 내부)
+- `/home/node/skills/etf-tracker/scripts/etf_tracker.py` - 리포트 생성 로직 (1803줄)
+- `/home/node/skills/etf-tracker/scripts/run_etf_tracker.py` - 실행 + 텔레그램 전송
+- `/home/node/skills/etf-tracker/knowledge/` - ETF/종목 지식 베이스
