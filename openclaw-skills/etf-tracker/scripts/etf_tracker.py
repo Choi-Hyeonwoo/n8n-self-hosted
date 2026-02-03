@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """
-TIMEFOLIO ETF Holdings Tracker v4
-- 해외/국내 3종씩 분리
-- 티커+거래소 표시 (Bloomberg code → SNDK US)
-- 이미지 기반 테이블 (matplotlib) + 텍스트 리포트
-- 1주일 / 1개월 증감 TOP 5
-- 뉴스 헤드라인 + 매체 출처 + IB명 추출
-- 3개월 비교는 엑셀 전용 (리포트에서 제외)
+TIMEFOLIO ETF Holdings Tracker v5
+- Page 1: 비중 증가 TOP 5 + 비중 감소 BOTTOM 3 (이미지)
+- Page 2: Holdings TOP 10 × 3 ETF 세로 합치기 (#, Ticker, 종목명, 비중, 1D, 1W, 1M)
+- Page 3: 주요 종목 뉴스 분석 (이미지)
+- 텍스트 리포트 (fallback)
 """
 
 import urllib.request
@@ -33,12 +31,12 @@ FONT_BOLD_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
 
 # ─── ETF Configuration ───────────────────────────────────────────────
 ETFS = {
-    "NQ100":         {"idx": 2,  "name": "미국나스닥100액티브",     "flag": "\U0001f1fa\U0001f1f8", "cate": "001"},
-    "CN_AI":         {"idx": 19, "name": "차이나AI테크액티브",     "flag": "\U0001f1e8\U0001f1f3", "cate": "001"},
-    "GLOBAL_AI":     {"idx": 6,  "name": "글로벌AI인공지능액티브", "flag": "\U0001f916", "cate": "001"},
-    "KOSPI_ACTIVE":  {"idx": 11, "name": "코스피액티브",           "flag": "\U0001f1f0\U0001f1f7", "cate": "001"},
-    "K_CULTURE":     {"idx": 1,  "name": "K컬처액티브",           "flag": "\U0001f3ac", "cate": "001"},
-    "K_BIO":         {"idx": 13, "name": "K바이오액티브",          "flag": "\U0001f9ec", "cate": "001"},
+    "NQ100":         {"idx": 2,  "name": "미국나스닥100액티브",     "short": "NQ100",  "cate": "001"},
+    "CN_AI":         {"idx": 19, "name": "차이나AI테크액티브",     "short": "CN AI",  "cate": "001"},
+    "GLOBAL_AI":     {"idx": 6,  "name": "글로벌AI인공지능액티브", "short": "GL AI",  "cate": "001"},
+    "KOSPI_ACTIVE":  {"idx": 11, "name": "코스피액티브",           "short": "코스피", "cate": "001"},
+    "K_CULTURE":     {"idx": 1,  "name": "K컬처액티브",           "short": "K컬처",  "cate": "001"},
+    "K_BIO":         {"idx": 13, "name": "K바이오액티브",          "short": "K바이오","cate": "001"},
 }
 
 OVERSEAS_KEYS = ["NQ100", "CN_AI", "GLOBAL_AI"]
@@ -61,7 +59,6 @@ def fetch_page(idx, cate="001"):
 
 
 def fetch_period_comparison(idx, period):
-    """Fetch comparison data via AJAX. period: pdfM1, pdfM3, pdfM6, pdfY1"""
     data = urllib.parse.urlencode({"period": period, "idx": idx}).encode()
     req = urllib.request.Request(AJAX_URL, data=data, headers={
         "User-Agent": "Mozilla/5.0 (compatible; OpenClaw/1.0)"
@@ -82,7 +79,6 @@ def parse_date(html):
 
 
 def _parse_ticker(code_raw):
-    """Convert Bloomberg code to display ticker. 'SNDK US EQUITY' → 'SNDK US'"""
     if not code_raw:
         return ""
     t = code_raw.strip()
@@ -137,14 +133,6 @@ def save_data(etf_key, date, holdings):
         }, f, ensure_ascii=False, indent=2)
 
 
-def load_data(etf_key, date_str):
-    fp = os.path.join(DATA_DIR, f"{etf_key}_{date_str}.json")
-    if os.path.exists(fp):
-        with open(fp, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return None
-
-
 def load_nearest(etf_key, target_date, direction="before", max_days=10):
     ensure_dir()
     files = sorted([
@@ -153,22 +141,19 @@ def load_nearest(etf_key, target_date, direction="before", max_days=10):
     ])
     if not files:
         return None
-
     candidates = []
+    prefix = f"{etf_key}_"
     for fn in files:
-        parts = fn.replace(".json", "").split("_", 1)
-        if len(parts) < 2:
+        stem = fn.replace(".json", "")
+        file_date = stem[len(prefix):]
+        if not file_date:
             continue
-        file_date = parts[1]
         if direction == "before" and file_date < target_date:
             candidates.append((file_date, fn))
-
     if not candidates:
         return None
-
     candidates.sort(key=lambda x: x[0], reverse=True)
     best_date, best_fn = candidates[0]
-
     try:
         td = datetime.strptime(target_date, "%Y-%m-%d")
         bd = datetime.strptime(best_date, "%Y-%m-%d")
@@ -176,9 +161,12 @@ def load_nearest(etf_key, target_date, direction="before", max_days=10):
             return None
     except ValueError:
         pass
-
     with open(os.path.join(DATA_DIR, best_fn), "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def load_daily(etf_key, current_date):
+    return load_nearest(etf_key, current_date, direction="before", max_days=3)
 
 
 def load_weekly(etf_key, current_date):
@@ -187,14 +175,10 @@ def load_weekly(etf_key, current_date):
 
 # ─── Comparison helpers ──────────────────────────────────────────────
 def parse_ajax_changes(ajax_data, ticker_map=None):
-    """Parse AJAX response into ups/downs/news lists.
-    ticker_map: {name: ticker} to attach tickers to items.
-    """
     if not ajax_data or "today" not in ajax_data:
         return [], [], []
     if ticker_map is None:
         ticker_map = {}
-
     ups, downs, news = [], [], []
     for item in ajax_data["today"]:
         nm = item["prodNm"]
@@ -213,46 +197,35 @@ def parse_ajax_changes(ajax_data, ticker_map=None):
                     downs.append(entry)
             except ValueError:
                 pass
-
     ups.sort(key=lambda x: x["diff"], reverse=True)
     downs.sort(key=lambda x: x["diff"])
     return ups, downs, news
 
 
-def build_stored_diff(today_list, prev_list, ticker_map=None):
-    if not prev_list:
-        return [], [], []
-    if ticker_map is None:
-        ticker_map = {}
-    prev_map = {h["name"]: h["weight"] for h in prev_list}
-    today_map = {h["name"]: h["weight"] for h in today_list}
-
-    ups, downs, news = [], [], []
-    for name, w in today_map.items():
-        pw = prev_map.get(name, 0)
-        diff = round(w - pw, 2)
-        tk = ticker_map.get(name, "")
-        if name not in prev_map and w >= 0.5:
-            news.append({"name": name, "weight": w, "ticker": tk})
-        elif diff >= 0.1:
-            ups.append({"name": name, "weight": w, "diff": diff, "ticker": tk})
-        elif diff <= -0.1:
-            downs.append({"name": name, "weight": w, "diff": diff, "ticker": tk})
-
-    ups.sort(key=lambda x: x["diff"], reverse=True)
-    downs.sort(key=lambda x: x["diff"])
-    return ups, downs, news
+def _build_diff_map(holdings, prev_data):
+    """Build {name: diff} map from today vs prev stored data."""
+    if not prev_data:
+        return {}
+    prev_map = {h["name"]: h["weight"] for h in prev_data.get("holdings", [])}
+    result = {}
+    for h in holdings:
+        pw = prev_map.get(h["name"])
+        if pw is not None:
+            result[h["name"]] = round(h["weight"] - pw, 2)
+    return result
 
 
-# ─── Image rendering ─────────────────────────────────────────────────
+# ─── Image rendering helpers ─────────────────────────────────────────
 def _get_fonts():
     fp = FONT_PATH if os.path.exists(FONT_PATH) else None
     fb = FONT_BOLD_PATH if os.path.exists(FONT_BOLD_PATH) else None
     font = FontProperties(fname=fp, size=10) if fp else FontProperties(size=10)
-    font_title = FontProperties(fname=fb or fp, size=13, weight="bold") if (fb or fp) else FontProperties(size=13, weight="bold")
-    font_header = FontProperties(fname=fb or fp, size=10, weight="bold") if (fb or fp) else FontProperties(size=10, weight="bold")
+    font_title = FontProperties(fname=fb or fp, size=14, weight="bold") if (fb or fp) else FontProperties(size=14, weight="bold")
+    font_section = FontProperties(fname=fb or fp, size=11, weight="bold") if (fb or fp) else FontProperties(size=11, weight="bold")
+    font_header = FontProperties(fname=fb or fp, size=9.5, weight="bold") if (fb or fp) else FontProperties(size=9.5, weight="bold")
     font_small = FontProperties(fname=fp, size=9) if fp else FontProperties(size=9)
-    return font, font_title, font_header, font_small
+    font_news = FontProperties(fname=fp, size=8.5) if fp else FontProperties(size=8.5)
+    return font, font_title, font_section, font_header, font_small, font_news
 
 
 def _diff_str(val):
@@ -265,14 +238,14 @@ def _diff_str(val):
 
 def _diff_color(val):
     if val is None or val == "" or val == "-":
-        return "#666666"
+        return "#999999"
     if isinstance(val, str):
         if val == "NEW":
-            return "#4CAF50"  # Green for new entries
+            return "#4CAF50"
         if val.startswith("+"):
-            return "#D32F2F"  # Red for increase (Korean convention)
+            return "#D32F2F"
         elif val.startswith("-"):
-            return "#1565C0"  # Blue for decrease
+            return "#1565C0"
         return "#333333"
     if val > 0:
         return "#D32F2F"
@@ -281,49 +254,46 @@ def _diff_color(val):
     return "#333333"
 
 
-def _strip_emoji(text):
-    """Remove emoji characters for font-safe rendering."""
-    return re.sub(
-        r'[\U0001f1e0-\U0001f1ff\U0001f300-\U0001f9ff\U00002600-\U000027bf'
-        r'\U0000fe00-\U0000fe0f\U0000200d]+', '', text
-    ).strip()
+def _draw_table_rows(ax, rows, col_defs, y_start, row_h, fonts, fig_w):
+    """Draw table rows. col_defs: [(x, key, align, font_key, color_fn)]"""
+    font, _, _, font_header, font_small, _ = fonts
+    font_map = {"normal": font, "header": font_header, "small": font_small}
+
+    for idx, row in enumerate(rows):
+        y = y_start - idx * row_h
+        if idx % 2 == 0:
+            ax.add_patch(plt.Rectangle((0.15, y - row_h / 2 + 0.02),
+                                        fig_w - 0.3, row_h,
+                                        facecolor="#F8F9FA", edgecolor="none", zorder=1))
+        for x, key, align, fkey, color_fn in col_defs:
+            val = row.get(key, "")
+            text = _diff_str(val) if color_fn else (val if isinstance(val, str) else str(val))
+            color = _diff_color(val) if color_fn else "#333333"
+            f = font_map.get(fkey, font)
+            ax.text(x, y, text, fontproperties=f,
+                    ha=align, va="center", color=color, zorder=3)
 
 
-def render_etf_table(etf_name, flag, date, holdings, m1_map, weekly_map, top_n=15):
-    """Render holdings table as PNG image. Returns file path."""
-    if not HAS_MPL or not holdings:
+# ─── Page 1: 비중 변동 TOP 5 + BOTTOM 3 ─────────────────────────────
+def render_page_changes(group_label, date, ups, downs, new_items):
+    if not HAS_MPL:
         return None
+    fonts = _get_fonts()
+    font, font_title, font_section, font_header, font_small, _ = fonts
 
-    font, font_title, font_header, font_small = _get_fonts()
-
-    # Build rows: #, Ticker, Name, Weight, 1W, 1M
-    rows = []
-    for i, h in enumerate(holdings[:top_n], 1):
-        ticker = h.get("ticker", "")
-        name = h["name"]
-        if len(name) > 22:
-            name = name[:20] + ".."
-        weight = h["weight"]
-        w1 = weekly_map.get(h["name"])
-        m1 = m1_map.get(h["name"])
-        # "신규" marker
-        if m1 is None and h["name"] in m1_map and m1_map[h["name"]] == "NEW":
-            m1 = "NEW"
-        rows.append({
-            "rank": str(i),
-            "ticker": ticker,
-            "name": name,
-            "weight": f"{weight:.1f}%",
-            "w1": w1,
-            "m1": m1,
-        })
-
-    n_rows = len(rows)
+    n_ups = min(len(ups), 5)
+    n_downs = min(len(downs), 3)
+    n_new = min(len(new_items), 3) if new_items else 0
     row_h = 0.38
-    header_h = 0.55
-    title_h = 0.65
-    fig_h = title_h + header_h + n_rows * row_h + 0.3
-    fig_w = 11.0
+    sect_h = 0.48
+    has_new = n_new > 0
+
+    fig_h = (0.75 + sect_h + n_ups * row_h + 0.15
+             + sect_h + n_downs * row_h + 0.15)
+    if has_new:
+        fig_h += sect_h + n_new * row_h + 0.1
+    fig_h += 0.2
+    fig_w = 12.5
 
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
     ax.set_xlim(0, fig_w)
@@ -331,72 +301,286 @@ def render_etf_table(etf_name, flag, date, holdings, m1_map, weekly_map, top_n=1
     ax.axis("off")
     fig.patch.set_facecolor("white")
 
-    # Column positions (x coords)
-    cols = {
-        "rank":   0.3,
-        "ticker": 1.4,
-        "name":   3.8,
-        "weight": 6.8,
-        "w1":     8.2,
-        "m1":     9.8,
-    }
+    col = {"rank": 0.4, "ticker": 1.6, "name": 3.8, "etf": 6.3, "weight": 8.0, "diff": 10.0, "new_tag": 11.5}
 
-    # Title (strip emoji for font compatibility)
-    y_title = fig_h - 0.4
-    clean_title = _strip_emoji(f"{flag}  {etf_name}") or etf_name
-    ax.text(fig_w / 2, y_title, clean_title,
+    # Title
+    y = fig_h - 0.45
+    ax.text(fig_w / 2, y, f"TIMEFOLIO {group_label} ETF  비중 변동",
             fontproperties=font_title, ha="center", va="center", color="#1A1A2E")
-    ax.text(fig_w - 0.3, y_title, date,
-            fontproperties=font_small, ha="right", va="center", color="#888888")
+    ax.text(fig_w - 0.3, y, date, fontproperties=font_small,
+            ha="right", va="center", color="#888888")
 
-    # Header bar
-    y_header = y_title - header_h
-    ax.add_patch(plt.Rectangle((0.1, y_header - 0.15), fig_w - 0.2, 0.38,
-                                facecolor="#2C3E50", edgecolor="none", zorder=2))
-    for key, label in [("rank", "#"), ("ticker", "Ticker"), ("name", "종목명"),
-                        ("weight", "비중"), ("w1", "1W"), ("m1", "1M")]:
-        ax.text(cols[key], y_header + 0.04, label,
-                fontproperties=font_header, ha="center", va="center", color="white", zorder=3)
+    # ─ UP section ─
+    y -= 0.55
+    ax.add_patch(plt.Rectangle((0.15, y - 0.17), fig_w - 0.3, 0.38,
+                                facecolor="#C62828", edgecolor="none", zorder=2))
+    ax.text(0.4, y + 0.02, "비중 증가 TOP 5", fontproperties=font_section,
+            ha="left", va="center", color="white", zorder=3)
+    # Column headers
+    y -= 0.4
+    for x, label in [(col["rank"], "#"), (col["ticker"], "Ticker"),
+                      (col["name"], "종목명"), (col["etf"], "ETF"),
+                      (col["weight"], "비중"), (col["diff"], "1M 변동")]:
+        ax.text(x, y, label, fontproperties=font_header,
+                ha="center", va="center", color="#666666")
+    y -= 0.08
 
-    # Data rows
-    for idx, row in enumerate(rows):
-        y = y_header - 0.15 - (idx + 1) * row_h + 0.05
+    for i, item in enumerate(ups[:5]):
+        y -= row_h
+        if i % 2 == 0:
+            ax.add_patch(plt.Rectangle((0.15, y - row_h / 2 + 0.02),
+                                        fig_w - 0.3, row_h,
+                                        facecolor="#FFF5F5", edgecolor="none", zorder=1))
+        ax.text(col["rank"], y, str(i + 1), fontproperties=font_small,
+                ha="center", va="center", color="#555", zorder=3)
+        ax.text(col["ticker"], y, item.get("ticker", ""), fontproperties=font_header,
+                ha="center", va="center", color="#2C3E50", zorder=3)
+        name = item["name"][:20] + ".." if len(item["name"]) > 20 else item["name"]
+        ax.text(col["name"], y, name, fontproperties=font,
+                ha="center", va="center", color="#333", zorder=3)
+        ax.text(col["etf"], y, item.get("etf_short", ""), fontproperties=font_small,
+                ha="center", va="center", color="#777", zorder=3)
+        ax.text(col["weight"], y, f"{item['weight']:.1f}%", fontproperties=font,
+                ha="center", va="center", color="#333", zorder=3)
+        ds = _diff_str(item["diff"])
+        ax.text(col["diff"], y, ds, fontproperties=font,
+                ha="center", va="center", color="#D32F2F", zorder=3)
 
-        # Alternating background
-        if idx % 2 == 0:
-            ax.add_patch(plt.Rectangle((0.1, y - 0.12), fig_w - 0.2, row_h,
-                                        facecolor="#F8F9FA", edgecolor="none", zorder=1))
+    # ─ DOWN section ─
+    y -= 0.55
+    ax.add_patch(plt.Rectangle((0.15, y - 0.17), fig_w - 0.3, 0.38,
+                                facecolor="#1565C0", edgecolor="none", zorder=2))
+    ax.text(0.4, y + 0.02, "비중 감소 BOTTOM 3", fontproperties=font_section,
+            ha="left", va="center", color="white", zorder=3)
+    y -= 0.4
+    for x, label in [(col["rank"], "#"), (col["ticker"], "Ticker"),
+                      (col["name"], "종목명"), (col["etf"], "ETF"),
+                      (col["weight"], "비중"), (col["diff"], "1M 변동")]:
+        ax.text(x, y, label, fontproperties=font_header,
+                ha="center", va="center", color="#666666")
+    y -= 0.08
 
-        # Rank
-        ax.text(cols["rank"], y + 0.05, row["rank"],
-                fontproperties=font_small, ha="center", va="center", color="#555555", zorder=3)
-        # Ticker
-        ax.text(cols["ticker"], y + 0.05, row["ticker"],
-                fontproperties=font_header, ha="center", va="center", color="#2C3E50", zorder=3)
-        # Name
-        ax.text(cols["name"], y + 0.05, row["name"],
-                fontproperties=font, ha="center", va="center", color="#333333", zorder=3)
-        # Weight
-        ax.text(cols["weight"], y + 0.05, row["weight"],
-                fontproperties=font, ha="center", va="center", color="#333333", zorder=3)
-        # 1W
-        w1_str = _diff_str(row["w1"])
-        ax.text(cols["w1"], y + 0.05, w1_str,
-                fontproperties=font, ha="center", va="center",
-                color=_diff_color(row["w1"]), zorder=3)
-        # 1M
-        m1_str = _diff_str(row["m1"])
-        ax.text(cols["m1"], y + 0.05, m1_str,
-                fontproperties=font, ha="center", va="center",
-                color=_diff_color(row["m1"]), zorder=3)
+    for i, item in enumerate(downs[:3]):
+        y -= row_h
+        if i % 2 == 0:
+            ax.add_patch(plt.Rectangle((0.15, y - row_h / 2 + 0.02),
+                                        fig_w - 0.3, row_h,
+                                        facecolor="#F5F8FF", edgecolor="none", zorder=1))
+        ax.text(col["rank"], y, str(i + 1), fontproperties=font_small,
+                ha="center", va="center", color="#555", zorder=3)
+        ax.text(col["ticker"], y, item.get("ticker", ""), fontproperties=font_header,
+                ha="center", va="center", color="#2C3E50", zorder=3)
+        name = item["name"][:20] + ".." if len(item["name"]) > 20 else item["name"]
+        ax.text(col["name"], y, name, fontproperties=font,
+                ha="center", va="center", color="#333", zorder=3)
+        ax.text(col["etf"], y, item.get("etf_short", ""), fontproperties=font_small,
+                ha="center", va="center", color="#777", zorder=3)
+        ax.text(col["weight"], y, f"{item['weight']:.1f}%", fontproperties=font,
+                ha="center", va="center", color="#333", zorder=3)
+        ds = _diff_str(item["diff"])
+        ax.text(col["diff"], y, ds, fontproperties=font,
+                ha="center", va="center", color="#1565C0", zorder=3)
 
-    # Bottom line
-    y_bottom = y_header - 0.15 - (n_rows) * row_h - 0.05
-    ax.plot([0.1, fig_w - 0.1], [y_bottom, y_bottom], color="#DEE2E6", linewidth=1, zorder=2)
-    ax.text(fig_w / 2, y_bottom - 0.15, f"총 {len(holdings)}종목 보유",
-            fontproperties=font_small, ha="center", va="center", color="#999999")
+    # ─ NEW section ─
+    if has_new:
+        y -= 0.55
+        ax.add_patch(plt.Rectangle((0.15, y - 0.17), fig_w - 0.3, 0.38,
+                                    facecolor="#2E7D32", edgecolor="none", zorder=2))
+        ax.text(0.4, y + 0.02, "신규 편입", fontproperties=font_section,
+                ha="left", va="center", color="white", zorder=3)
+        y -= 0.4
+        for x, label in [(col["rank"], "#"), (col["ticker"], "Ticker"),
+                          (col["name"], "종목명"), (col["etf"], "ETF"),
+                          (col["weight"], "비중")]:
+            ax.text(x, y, label, fontproperties=font_header,
+                    ha="center", va="center", color="#666666")
+        y -= 0.08
+        for i, item in enumerate(new_items[:3]):
+            y -= row_h
+            if i % 2 == 0:
+                ax.add_patch(plt.Rectangle((0.15, y - row_h / 2 + 0.02),
+                                            fig_w - 0.3, row_h,
+                                            facecolor="#F5FFF5", edgecolor="none", zorder=1))
+            ax.text(col["rank"], y, str(i + 1), fontproperties=font_small,
+                    ha="center", va="center", color="#555", zorder=3)
+            ax.text(col["ticker"], y, item.get("ticker", ""), fontproperties=font_header,
+                    ha="center", va="center", color="#2C3E50", zorder=3)
+            name = item["name"][:20] + ".." if len(item["name"]) > 20 else item["name"]
+            ax.text(col["name"], y, name, fontproperties=font,
+                    ha="center", va="center", color="#333", zorder=3)
+            ax.text(col["etf"], y, item.get("etf_short", ""), fontproperties=font_small,
+                    ha="center", va="center", color="#777", zorder=3)
+            ax.text(col["weight"], y, f"{item['weight']:.1f}%", fontproperties=font,
+                    ha="center", va="center", color="#4CAF50", zorder=3)
 
-    path = os.path.join(IMG_DIR, f"etf_{etf_name}_{date}.png")
+    path = os.path.join(IMG_DIR, f"etf_p1_changes_{date}.png")
+    fig.savefig(path, dpi=150, bbox_inches="tight", facecolor="white", pad_inches=0.1)
+    plt.close(fig)
+    return path
+
+
+# ─── Page 2: Holdings TOP 10 × 3 ETF (stacked) ─────────────────────
+def render_page_holdings(group_label, date, etf_sections):
+    """etf_sections: list of {name, count, rows: [{rank,ticker,name,weight,d1,w1,m1}]}"""
+    if not HAS_MPL or not etf_sections:
+        return None
+    fonts = _get_fonts()
+    font, font_title, font_section, font_header, font_small, _ = fonts
+
+    row_h = 0.34
+    sect_head_h = 0.42
+    col_head_h = 0.32
+    spacing = 0.25
+
+    total_rows = sum(len(s["rows"]) for s in etf_sections)
+    n_sects = len(etf_sections)
+
+    fig_h = (0.7 + n_sects * (sect_head_h + col_head_h) + total_rows * row_h
+             + (n_sects - 1) * spacing + 0.3)
+    fig_w = 12.5
+
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+    ax.set_xlim(0, fig_w)
+    ax.set_ylim(0, fig_h)
+    ax.axis("off")
+    fig.patch.set_facecolor("white")
+
+    col = {"rank": 0.35, "ticker": 1.5, "name": 3.6,
+           "weight": 5.8, "d1": 7.3, "w1": 8.9, "m1": 10.5}
+    col_labels = [("rank", "#"), ("ticker", "Ticker"), ("name", "종목명"),
+                  ("weight", "비중"), ("d1", "1D"), ("w1", "1W"), ("m1", "1M")]
+
+    # Title
+    y = fig_h - 0.4
+    ax.text(fig_w / 2, y, f"TIMEFOLIO {group_label} ETF  Holdings TOP 10",
+            fontproperties=font_title, ha="center", va="center", color="#1A1A2E")
+    ax.text(fig_w - 0.3, y, date, fontproperties=font_small,
+            ha="right", va="center", color="#888888")
+
+    y -= 0.45
+
+    for si, sect in enumerate(etf_sections):
+        # Section header
+        ax.add_patch(plt.Rectangle((0.15, y - 0.17), fig_w - 0.3, 0.38,
+                                    facecolor="#2C3E50", edgecolor="none", zorder=2))
+        ax.text(0.4, y + 0.02, f"{sect['name']}  ({sect['count']}종목)",
+                fontproperties=font_section, ha="left", va="center",
+                color="white", zorder=3)
+        y -= sect_head_h
+
+        # Column headers
+        for ck, cl in col_labels:
+            ax.text(col[ck], y, cl, fontproperties=font_header,
+                    ha="center", va="center", color="#888888")
+        y -= col_head_h
+
+        # Data rows
+        for ri, row in enumerate(sect["rows"]):
+            if ri % 2 == 0:
+                ax.add_patch(plt.Rectangle((0.15, y - row_h / 2 + 0.01),
+                                            fig_w - 0.3, row_h,
+                                            facecolor="#F8F9FA", edgecolor="none", zorder=1))
+            ax.text(col["rank"], y, row["rank"], fontproperties=font_small,
+                    ha="center", va="center", color="#555", zorder=3)
+            ax.text(col["ticker"], y, row["ticker"], fontproperties=font_header,
+                    ha="center", va="center", color="#2C3E50", zorder=3)
+            ax.text(col["name"], y, row["name"], fontproperties=font,
+                    ha="center", va="center", color="#333", zorder=3)
+            ax.text(col["weight"], y, row["weight"], fontproperties=font,
+                    ha="center", va="center", color="#333", zorder=3)
+            for k in ("d1", "w1", "m1"):
+                ds = _diff_str(row[k])
+                ax.text(col[k], y, ds, fontproperties=font,
+                        ha="center", va="center", color=_diff_color(row[k]), zorder=3)
+            y -= row_h
+
+        # Separator
+        if si < n_sects - 1:
+            y -= spacing
+
+    path = os.path.join(IMG_DIR, f"etf_p2_holdings_{date}.png")
+    fig.savefig(path, dpi=150, bbox_inches="tight", facecolor="white", pad_inches=0.1)
+    plt.close(fig)
+    return path
+
+
+# ─── Page 3: 뉴스 분석 ──────────────────────────────────────────────
+def render_page_news(group_label, date, movers_with_news):
+    """movers_with_news: [{name,ticker,diff,weight,etf_short,news_items,analysis}]"""
+    if not HAS_MPL or not movers_with_news:
+        return None
+    fonts = _get_fonts()
+    font, font_title, font_section, font_header, font_small, font_news = fonts
+
+    n = len(movers_with_news)
+    line_h = 0.30
+    block_h = line_h * 4 + 0.12  # title + 2 headlines + analysis + gap
+    fig_h = 0.7 + n * block_h + 0.2
+    fig_w = 13.0
+
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+    ax.set_xlim(0, fig_w)
+    ax.set_ylim(0, fig_h)
+    ax.axis("off")
+    fig.patch.set_facecolor("white")
+
+    # Title
+    y = fig_h - 0.4
+    ax.text(fig_w / 2, y, f"TIMEFOLIO {group_label} ETF  주요 종목 뉴스 분석",
+            fontproperties=font_title, ha="center", va="center", color="#1A1A2E")
+    ax.text(fig_w - 0.3, y, date, fontproperties=font_small,
+            ha="right", va="center", color="#888888")
+
+    y -= 0.55
+
+    for i, m in enumerate(movers_with_news):
+        diff_s = _diff_str(m["diff"])
+        arrow = "+" if m["diff"] > 0 else ""
+        dc = "#D32F2F" if m["diff"] > 0 else "#1565C0"
+
+        # Stock header line
+        tk = m.get("ticker", "")
+        tk_s = f"{tk}  " if tk else ""
+        header = f"{i+1}. {tk_s}{m['name']}  ({m['etf_short']})"
+        ax.text(0.3, y, header, fontproperties=font_header,
+                ha="left", va="center", color="#1A1A2E", zorder=3)
+        tag = f"{diff_s}%p  ->  {m['weight']:.1f}%"
+        ax.text(fig_w - 0.3, y, tag, fontproperties=font,
+                ha="right", va="center", color=dc, zorder=3)
+
+        # Light background
+        ax.add_patch(plt.Rectangle((0.15, y - block_h + line_h + 0.06),
+                                    fig_w - 0.3, block_h - 0.06,
+                                    facecolor="#FAFAFA" if i % 2 == 0 else "white",
+                                    edgecolor="#EEEEEE", linewidth=0.5, zorder=0))
+        y -= line_h
+
+        # Headlines
+        news_items = m.get("news_items", [])
+        for ni in news_items[:2]:
+            src = ni.get("source", "")
+            ib = ni.get("ib")
+            label = ib or src
+            prefix = f"[{label}]  " if label else ""
+            title = ni.get("title", "")
+            if len(title) > 65:
+                title = title[:63] + ".."
+            ax.text(0.6, y, f"{prefix}{title}", fontproperties=font_news,
+                    ha="left", va="center", color="#444444", zorder=3)
+            y -= line_h
+
+        if not news_items:
+            ax.text(0.6, y, "(최근 뉴스 없음)", fontproperties=font_news,
+                    ha="left", va="center", color="#999999", zorder=3)
+            y -= line_h
+
+        # Analysis
+        analysis = m.get("analysis", "")
+        ax.text(0.6, y, f"-> {analysis}", fontproperties=font_small,
+                ha="left", va="center", color=dc, zorder=3)
+        y -= line_h + 0.12
+
+    path = os.path.join(IMG_DIR, f"etf_p3_news_{date}.png")
     fig.savefig(path, dpi=150, bbox_inches="tight", facecolor="white", pad_inches=0.1)
     plt.close(fig)
     return path
@@ -421,13 +605,11 @@ _KR_ALIASES = {
     "Qualcomm": "퀄컴", "Adobe": "어도비",
 }
 
-# Known IB / research firm names to extract from headlines
 _IB_NAMES = [
     "모간스탠리", "Morgan Stanley", "골드만삭스", "Goldman Sachs",
     "JP모간", "JPMorgan", "UBS", "시티", "Citi", "바클레이즈", "Barclays",
-    "도이치뱅크", "Deutsche Bank", "크레디트스위스", "Credit Suisse",
-    "뱅크오브아메리카", "BofA", "메릴린치", "Merrill Lynch",
-    "노무라", "Nomura", "다이와", "Daiwa", "CLSA", "맥쿼리", "Macquarie",
+    "도이치뱅크", "Deutsche Bank", "뱅크오브아메리카", "BofA",
+    "노무라", "Nomura", "CLSA", "맥쿼리", "Macquarie",
     "번스타인", "Bernstein", "제프리스", "Jefferies", "웨드부시", "Wedbush",
     "키움증권", "하나증권", "미래에셋증권", "삼성증권", "NH투자증권",
     "KB증권", "대신증권", "신한투자증권", "한국투자증권", "메리츠증권",
@@ -454,7 +636,6 @@ def _strip_html(text):
 
 
 def _extract_ib(headline):
-    """Extract IB/research firm name from headline if mentioned."""
     for ib in _IB_NAMES:
         if ib in headline:
             return ib
@@ -462,9 +643,6 @@ def _extract_ib(headline):
 
 
 def fetch_stock_news(name, limit=2):
-    """Fetch recent news headlines + source from Google News RSS.
-    Returns list of {"title": str, "source": str, "ib": str|None}
-    """
     clean = _clean_stock_name(name)
     query = urllib.parse.quote(f"{clean} 주가")
     url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
@@ -474,7 +652,6 @@ def fetch_stock_news(name, limit=2):
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             xml = resp.read().decode("utf-8")
-
         items = re.findall(r'<item>(.*?)</item>', xml, re.DOTALL)
         results = []
         for item_xml in items[:limit + 4]:
@@ -482,15 +659,11 @@ def fetch_stock_news(name, limit=2):
             source_m = re.search(r'<source[^>]*>(.*?)</source>', item_xml)
             if not title_m:
                 continue
-
             raw_title = _strip_html(title_m.group(1))
             source = _strip_html(source_m.group(1)) if source_m else ""
-
-            # Clean trailing " - source" from title
             title = re.sub(r'\s*-\s*[^-]{2,30}$', '', raw_title)
             if not title or len(title) <= 5:
                 continue
-
             ib = _extract_ib(raw_title)
             results.append({"title": title, "source": source, "ib": ib})
             if len(results) >= limit:
@@ -500,185 +673,133 @@ def fetch_stock_news(name, limit=2):
         return []
 
 
-# ─── Keyword-based analysis from headlines ───────────────────────────
+# ─── Keyword-based analysis ──────────────────────────────────────────
 KEYWORD_RULES = [
     (["사노피", "우선순위", "보류", "중단"],
-     "파트너십 재평가 — 핵심 파이프라인 가치 유지 관점에서 비중 조정",
-     "파트너사 우선순위 변경에 따른 리스크 확대로 비중 축소"),
+     "파트너십 재평가 — 파이프라인 가치 유지 관점 비중 조정",
+     "파트너사 우선순위 변경 → 리스크 확대로 비중 축소"),
     (["비만", "GLP", "오젠픽", "위고비", "경구", "알약"],
-     "GLP-1/비만 치료제 시장 확대 모멘텀으로 비중 확대",
-     "비만 치료제 경쟁 심화 우려로 비중 축소"),
+     "GLP-1/비만 치료제 시장 확대 모멘텀 → 비중 확대",
+     "비만 치료제 경쟁 심화 우려 → 비중 축소"),
     (["임상", "FDA", "승인", "신약", "파이프라인", "IND", "심사", "바이오", "항체", "ADC"],
-     "임상 진전/파이프라인 기대로 비중 확대",
-     "임상 지연/불확실성으로 비중 축소"),
-    (["합병", "인수", "M&A", "분사", "스핀오프", "재상장"],
-     "M&A/기업구조 변화에 따른 가치 재평가로 비중 확대",
-     "M&A 불확실성으로 비중 축소"),
+     "임상 진전/파이프라인 기대 → 비중 확대",
+     "임상 지연/불확실성 → 비중 축소"),
+    (["합병", "인수", "M&A", "분사", "스핀오프"],
+     "M&A/기업구조 변화 → 가치 재평가 비중 확대",
+     "M&A 불확실성 → 비중 축소"),
     (["출시", "흥행", "신작", "콘텐츠", "게임", "엔터"],
-     "신작 출시/콘텐츠 흥행 기대로 비중 확대",
-     "콘텐츠 부진/기대 하회로 비중 축소"),
+     "신작 출시/콘텐츠 흥행 기대 → 비중 확대",
+     "콘텐츠 부진/기대 하회 → 비중 축소"),
     (["실적", "매출", "영업이익", "순이익", "호실적", "어닝", "흑자"],
-     "실적 호조/서프라이즈 기반 비중 확대",
-     "실적 부진/기대 하회로 비중 축소"),
+     "실적 호조/서프라이즈 → 비중 확대",
+     "실적 부진/기대 하회 → 비중 축소"),
     (["목표가", "투자의견", "리포트", "커버리지", "매수의견", "상향"],
-     "애널리스트 목표가 상향에 따른 비중 확대",
-     "애널리스트 목표가 하향에 따른 비중 축소"),
+     "애널리스트 목표가 상향 → 비중 확대",
+     "애널리스트 목표가 하향 → 비중 축소"),
     (["메모리", "낸드", "NAND", "HBM", "D램", "DRAM", "반도체", "SSD"],
-     "메모리/반도체 업황 개선 기대로 비중 확대",
-     "반도체 업황 둔화 우려로 비중 축소"),
+     "메모리/반도체 업황 개선 → 비중 확대",
+     "반도체 업황 둔화 우려 → 비중 축소"),
     (["딥시크", "DeepSeek", "경쟁", "대안"],
-     "AI 경쟁 구도 변화 속 수혜 기대로 비중 확대",
-     "AI 경쟁 심화/밸류에이션 재조정으로 비중 축소"),
+     "AI 경쟁 구도 변화 속 수혜 → 비중 확대",
+     "AI 경쟁 심화/밸류에이션 재조정 → 비중 축소"),
     (["AI", "인공지능", "GPU", "데이터센터"],
-     "AI/데이터센터 수요 확대 수혜 기대로 비중 확대",
-     "AI 경쟁 심화/밸류에이션 부담으로 비중 축소"),
+     "AI/데이터센터 수요 확대 수혜 → 비중 확대",
+     "AI 경쟁 심화/밸류에이션 부담 → 비중 축소"),
     (["트럼프", "정책", "관세", "규제", "원자력", "에너지", "우라늄"],
-     "정책 수혜 기대로 비중 확대",
-     "정책/규제 리스크로 비중 축소"),
+     "정책 수혜 기대 → 비중 확대",
+     "정책/규제 리스크 → 비중 축소"),
     (["수주", "계약", "공급", "파트너", "구매"],
-     "대형 계약/수주 확보에 따른 비중 확대",
-     "수주 감소/계약 불발 우려로 비중 축소"),
+     "대형 계약/수주 확보 → 비중 확대",
+     "수주 감소/계약 불발 → 비중 축소"),
     (["수출", "환율", "진출", "해외", "글로벌"],
-     "해외 시장 확대/수출 호조로 비중 확대",
-     "수출 둔화/환율 악재로 비중 축소"),
+     "해외 시장 확대/수출 호조 → 비중 확대",
+     "수출 둔화/환율 악재 → 비중 축소"),
 ]
 
 
 def analyze_headlines(news_items, diff):
-    """Generate analysis from actual headlines using keyword matching + diff direction."""
     headlines = [n["title"] for n in news_items] if news_items else []
     if not headlines:
         return "비중 확대 — 상세 사유 확인 필요" if diff > 0 else "비중 축소 — 상세 사유 확인 필요"
-
     combined = " ".join(headlines)
-    for keywords, pos_analysis, neg_analysis in KEYWORD_RULES:
+    for keywords, pos_a, neg_a in KEYWORD_RULES:
         if any(kw in combined for kw in keywords):
-            return pos_analysis if diff > 0 else neg_analysis
-
-    short = headlines[0][:45]
+            return pos_a if diff > 0 else neg_a
+    short = headlines[0][:40]
     return f"{short} → 비중 확대" if diff > 0 else f"{short} → 비중 축소"
 
 
-# ─── Formatting (text) ───────────────────────────────────────────────
+# ─── Text formatting (fallback) ──────────────────────────────────────
 def _ticker_label(item):
-    """Format ticker for display: 'SNDK US  ' or ''"""
     tk = item.get("ticker", "")
     return f"{tk}  " if tk else ""
 
 
-def fmt_top5_section(title, ups, downs, news_items, limit=5):
-    lines = [title]
-
-    if ups:
-        lines.append("  \U0001f4c8 비중 증가")
-        for i, item in enumerate(ups[:limit], 1):
-            tk = _ticker_label(item)
-            lines.append(f"    {i}. {tk}{item['name']}")
-            lines.append(f"       {item['weight']:.2f}% (+{item['diff']:.2f}%p)")
-    if downs:
-        lines.append("  \U0001f4c9 비중 감소")
-        for i, item in enumerate(downs[:limit], 1):
-            tk = _ticker_label(item)
-            lines.append(f"    {i}. {tk}{item['name']}")
-            lines.append(f"       {item['weight']:.2f}% ({item['diff']:.2f}%p)")
-    if news_items:
-        names = ", ".join(f"{_ticker_label(n)}{n['name']}({n['weight']:.1f}%)" for n in news_items[:3])
-        lines.append(f"  \u2b50 신규: {names}")
-
-    lines.append("")
-    return "\n".join(lines)
-
-
-def fmt_etf_block(etf_key, holdings, m1_data, weekly_data, date, ticker_map):
-    cfg = ETFS[etf_key]
-    lines = []
-
-    lines.append(f"{cfg['flag']} {cfg['name']}")
-    lines.append(f"  {len(holdings)}종목 | {date}")
-    lines.append("")
-
-    # 1주일 비교
-    if weekly_data:
-        w_ups, w_downs, w_news = build_stored_diff(
-            holdings, weekly_data.get("holdings", []), ticker_map
-        )
-        week_label = f"\U0001f4ca 1주일 증감 TOP 5"
-        if weekly_data.get("date"):
-            week_label += f" (vs {weekly_data['date']})"
-        lines.append(fmt_top5_section(week_label, w_ups, w_downs, w_news))
-    else:
-        lines.append("\U0001f4ca 1주일 증감: 데이터 축적 중\n")
-
-    # 1개월 비교 (AJAX)
-    m1_ups, m1_downs, m1_news = parse_ajax_changes(m1_data, ticker_map)
-    lines.append(fmt_top5_section("\U0001f4ca 1개월 증감 TOP 5", m1_ups, m1_downs, m1_news))
-
-    return "\n".join(lines)
-
-
-def build_news_section(all_movers):
-    if not all_movers:
-        return ""
-
-    seen = {}
-    for m in all_movers:
-        key = m["name"]
-        if key not in seen or abs(m["diff"]) > abs(seen[key]["diff"]):
-            seen[key] = m
-    top_movers = sorted(seen.values(), key=lambda x: abs(x["diff"]), reverse=True)[:10]
-
-    if not top_movers:
-        return ""
-
+def build_text_report(group_label, date, all_ups, all_downs, all_new,
+                      etf_sections, movers_with_news, errors):
     lines = [
-        "\u2500" * 28,
-        "\U0001f50d 주요 종목 뉴스 분석",
-        "",
+        f"TIMEFOLIO {group_label} ETF 리포트",
+        f"{date}",
+        "=" * 32, "",
+        "[ 비중 증가 TOP 5 ]",
     ]
+    for i, u in enumerate(all_ups[:5], 1):
+        tk = _ticker_label(u)
+        lines.append(f"  {i}. {tk}{u['name']} ({u.get('etf_short','')})  "
+                      f"{u['weight']:.1f}%  {_diff_str(u['diff'])}")
+    lines += ["", "[ 비중 감소 BOTTOM 3 ]"]
+    for i, d in enumerate(all_downs[:3], 1):
+        tk = _ticker_label(d)
+        lines.append(f"  {i}. {tk}{d['name']} ({d.get('etf_short','')})  "
+                      f"{d['weight']:.1f}%  {_diff_str(d['diff'])}")
+    if all_new:
+        lines += ["", "[ 신규 편입 ]"]
+        for n in all_new[:3]:
+            tk = _ticker_label(n)
+            lines.append(f"  {tk}{n['name']} ({n.get('etf_short','')})  {n['weight']:.1f}%")
 
-    for i, m in enumerate(top_movers, 1):
-        diff_str = f"+{m['diff']:.2f}" if m["diff"] > 0 else f"{m['diff']:.2f}"
-        direction = "\u2191" if m["diff"] > 0 else "\u2193"
-        etf = m.get("etf_name", "")
-        tk = _ticker_label(m)
-
-        lines.append(f"{i}. {tk}{m['name']} ({etf})")
-        lines.append(f"   {direction} {diff_str}%p \u2192 현재 {m['weight']:.2f}%")
-
-        # Fetch real news with source
-        news_items = fetch_stock_news(m["name"], limit=2)
-        if news_items:
-            for n in news_items:
-                src = n.get("source", "")
-                ib = n.get("ib")
-                # Show IB name prominently if found, otherwise show source
-                if ib:
-                    lines.append(f"   \U0001f4f0 [{ib}] {n['title']}")
-                elif src:
-                    lines.append(f"   \U0001f4f0 [{src}] {n['title']}")
-                else:
-                    lines.append(f"   \U0001f4f0 {n['title']}")
-        else:
-            lines.append(f"   \U0001f4f0 (최근 뉴스 없음)")
-
-        analysis = analyze_headlines(news_items, m["diff"])
-        lines.append(f"   \U0001f4ad {analysis}")
+    lines += ["", "-" * 32, ""]
+    for sect in etf_sections:
+        lines.append(f"[ {sect['name']} | {sect['count']}종목 ]")
+        for r in sect["rows"]:
+            lines.append(f"  {r['rank']:>2}. {r['ticker']:<12} {r['name']:<20} "
+                          f"{r['weight']:>6}  1D:{_diff_str(r['d1']):>7}  "
+                          f"1W:{_diff_str(r['w1']):>7}  1M:{_diff_str(r['m1']):>7}")
         lines.append("")
 
+    if movers_with_news:
+        lines += ["-" * 32, "[ 주요 종목 뉴스 분석 ]", ""]
+        for i, m in enumerate(movers_with_news, 1):
+            tk = _ticker_label(m)
+            ds = _diff_str(m["diff"])
+            lines.append(f"{i}. {tk}{m['name']} ({m['etf_short']})  {ds}%p -> {m['weight']:.1f}%")
+            for n in m.get("news_items", [])[:2]:
+                src = n.get("ib") or n.get("source", "")
+                prefix = f"[{src}] " if src else ""
+                lines.append(f"   {prefix}{n['title']}")
+            lines.append(f"   -> {m.get('analysis', '')}")
+            lines.append("")
+
+    if errors:
+        lines.append(f"Errors: {', '.join(errors)}")
     return "\n".join(lines)
 
 
 # ─── Main ─────────────────────────────────────────────────────────────
 def run(etf_keys=None, generate_images=True):
-    """Run ETF tracker. Returns (text_report, [image_paths])."""
+    """Returns (text_report, [image_paths])."""
     if etf_keys is None:
         etf_keys = list(ETFS.keys())
 
     date = None
-    blocks = []
-    all_movers = []
     errors = []
-    image_paths = []
+
+    # Collect per-ETF data
+    all_ups = []
+    all_downs = []
+    all_new = []
+    etf_sections = []  # for page 2
+    all_movers = []    # for page 3
 
     for key in etf_keys:
         if key not in ETFS:
@@ -687,27 +808,24 @@ def run(etf_keys=None, generate_images=True):
 
         cfg = ETFS[key]
         try:
-            # 1. Fetch page & parse
             html = fetch_page(cfg["idx"], cfg["cate"])
             page_date = parse_date(html)
             if date is None:
                 date = page_date
             holdings = parse_full_holdings(html)
-
-            # 2. Save today's data
             save_data(key, page_date, holdings)
 
-            # 3. Build ticker map (name → ticker)
             ticker_map = {h["name"]: h.get("ticker", "") for h in holdings}
 
-            # 4. Fetch 1-month AJAX comparison
+            # Period data
             m1 = fetch_period_comparison(cfg["idx"], "pdfM1")
-
-            # 5. Load weekly data
+            daily = load_daily(key, page_date)
             weekly = load_weekly(key, page_date)
 
-            # 6. Build change maps for image rendering
-            m1_map = {}  # name → diff value or "NEW"
+            # Diff maps
+            d1_map = _build_diff_map(holdings, daily)
+            w1_map = _build_diff_map(holdings, weekly)
+            m1_map = {}
             if m1 and "today" in m1:
                 for item in m1["today"]:
                     inc = item.get("increaseWei", "0")
@@ -719,69 +837,100 @@ def run(etf_keys=None, generate_images=True):
                         except ValueError:
                             pass
 
-            weekly_map = {}
-            if weekly:
-                prev_wmap = {h["name"]: h["weight"] for h in weekly.get("holdings", [])}
-                for h in holdings:
-                    pw = prev_wmap.get(h["name"])
-                    if pw is not None:
-                        weekly_map[h["name"]] = round(h["weight"] - pw, 2)
-
-            # 7. Generate image
-            if generate_images and HAS_MPL:
-                img_path = render_etf_table(
-                    cfg["name"], cfg["flag"], page_date,
-                    holdings, m1_map, weekly_map
-                )
-                if img_path:
-                    image_paths.append(img_path)
-
-            # 8. Format text block
-            block = fmt_etf_block(key, holdings, m1, weekly, page_date, ticker_map)
-            blocks.append(block)
-
-            # 9. Collect movers for news section
+            # Parse AJAX changes for page 1
             m1_ups, m1_downs, m1_news = parse_ajax_changes(m1, ticker_map)
-            for item in m1_ups[:5]:
-                all_movers.append({**item, "etf_name": cfg["name"]})
-            for item in m1_downs[:5]:
-                all_movers.append({**item, "etf_name": cfg["name"]})
+            for item in m1_ups:
+                item["etf_short"] = cfg["short"]
+            for item in m1_downs:
+                item["etf_short"] = cfg["short"]
             for item in m1_news:
-                all_movers.append({
-                    "name": item["name"], "weight": item["weight"],
-                    "diff": item["weight"], "ticker": item.get("ticker", ""),
-                    "etf_name": cfg["name"],
+                item["etf_short"] = cfg["short"]
+            all_ups.extend(m1_ups)
+            all_downs.extend(m1_downs)
+            all_new.extend(m1_news)
+
+            # Page 2: holdings rows
+            rows = []
+            for i, h in enumerate(holdings[:10], 1):
+                name = h["name"][:22] + ".." if len(h["name"]) > 22 else h["name"]
+                m1v = m1_map.get(h["name"])
+                if isinstance(m1v, str) and m1v == "NEW":
+                    m1v = "NEW"
+                rows.append({
+                    "rank": str(i),
+                    "ticker": h.get("ticker", ""),
+                    "name": name,
+                    "weight": f"{h['weight']:.1f}%",
+                    "d1": d1_map.get(h["name"]),
+                    "w1": w1_map.get(h["name"]),
+                    "m1": m1v,
                 })
+            etf_sections.append({
+                "name": cfg["name"],
+                "count": len(holdings),
+                "rows": rows,
+            })
+
+            # Page 3: collect movers
+            for item in m1_ups[:5]:
+                all_movers.append({**item, "etf_short": cfg["short"]})
+            for item in m1_downs[:3]:
+                all_movers.append({**item, "etf_short": cfg["short"]})
 
         except Exception as e:
             errors.append(f"{key}: {e}")
 
-    # Determine group label
+    # Determine group
     keys_set = set(etf_keys)
     if keys_set <= set(OVERSEAS_KEYS):
-        group = "\U0001f30f 해외"
+        group_label = "해외"
     elif keys_set <= set(DOMESTIC_KEYS):
-        group = "\U0001f1f0\U0001f1f7 국내"
+        group_label = "국내"
     else:
-        group = "전체"
+        group_label = "전체"
 
-    header = (
-        f"\U0001f4ca TIMEFOLIO {group} ETF 리포트\n"
-        f"\U0001f4c5 {date or 'unknown'}\n"
-        f"{'=' * 28}"
-    )
+    if date is None:
+        date = datetime.now().strftime("%Y-%m-%d")
 
-    separator = "\n" + "\u2500" * 28 + "\n"
-    body = separator.join(blocks)
+    # Sort movers
+    all_ups.sort(key=lambda x: x["diff"], reverse=True)
+    all_downs.sort(key=lambda x: x["diff"])
 
-    news = build_news_section(all_movers)
+    # Dedupe movers for page 3
+    seen = {}
+    for m in all_movers:
+        key = m["name"]
+        if key not in seen or abs(m["diff"]) > abs(seen[key]["diff"]):
+            seen[key] = m
+    top_movers = sorted(seen.values(), key=lambda x: abs(x["diff"]), reverse=True)[:8]
 
-    report = f"{header}\n\n{body}"
-    if news:
-        report += f"\n{news}"
-    if errors:
-        report += "\n\n\u26a0 Errors: " + ", ".join(errors)
+    # Fetch news for movers (page 3)
+    movers_with_news = []
+    for m in top_movers:
+        news_items = fetch_stock_news(m["name"], limit=2)
+        analysis = analyze_headlines(news_items, m["diff"])
+        movers_with_news.append({
+            **m,
+            "news_items": news_items,
+            "analysis": analysis,
+        })
 
+    # Generate images
+    image_paths = []
+    if generate_images and HAS_MPL:
+        p1 = render_page_changes(group_label, date, all_ups, all_downs, all_new)
+        if p1:
+            image_paths.append(p1)
+        p2 = render_page_holdings(group_label, date, etf_sections)
+        if p2:
+            image_paths.append(p2)
+        p3 = render_page_news(group_label, date, movers_with_news)
+        if p3:
+            image_paths.append(p3)
+
+    # Text report (fallback)
+    report = build_text_report(group_label, date, all_ups, all_downs, all_new,
+                                etf_sections, movers_with_news, errors)
     return report, image_paths
 
 
@@ -797,4 +946,4 @@ if __name__ == "__main__":
     report, images = run(keys)
     print(report)
     if images:
-        print(f"\n\U0001f5bc Images: {', '.join(images)}")
+        print(f"\nImages: {', '.join(images)}")
