@@ -3,7 +3,7 @@
 TIMEFOLIO ETF Holdings Tracker v3
 - 해외/국내 3종씩 분리
 - 1주일 / 1개월 증감 TOP 5 (증가+감소)
-- 각 TOP 5 종목별 뉴스 검색 키워드 + 운용역 추론
+- 각 TOP 5 종목별 실제 뉴스 헤드라인 + 이벤트 기반 추론
 - 3개월 비교는 엑셀 전용 (리포트에서 제외)
 """
 
@@ -278,8 +278,139 @@ def fmt_etf_block(etf_key, holdings, m1_data, weekly_data, date):
     return "\n".join(lines)
 
 
+# ─── News fetching ───────────────────────────────────────────────────
+# Korean aliases for well-known foreign stocks (better news search results)
+_KR_ALIASES = {
+    "NVIDIA": "엔비디아", "Tesla": "테슬라", "Alphabet": "구글 알파벳",
+    "Microsoft": "마이크로소프트", "Apple": "애플", "Amazon": "아마존",
+    "Meta Platforms": "메타 페이스북", "Intel": "인텔", "AMD": "AMD 반도체",
+    "ASML": "ASML 반도체", "TSMC": "TSMC 반도체",
+    "Taiwan Semiconductor": "TSMC 반도체",
+    "Sandisk": "샌디스크", "Seagate": "씨게이트",
+    "Micron": "마이크론", "Western Digital": "웨스턴디지털",
+    "Bloom Energy": "블룸에너지", "Cameco": "카메코 우라늄",
+    "Rocket Lab": "로켓랩", "Alibaba": "알리바바",
+    "Zhongji Innolight": "중지이노라이트 광모듈",
+    "Eoptolink": "이옵토링크 광트랜시버",
+    "MediaTek": "미디어텍", "Ganfeng Lithium": "간펑리튬",
+    "GE Vernova": "GE버노바 에너지",
+}
+
+
+def _clean_stock_name(name):
+    """Clean stock name for news search query, prefer Korean alias."""
+    # Check for Korean alias first
+    for eng, kr in _KR_ALIASES.items():
+        if eng.lower() in name.lower():
+            return kr
+    # Fallback: strip legal suffixes
+    clean = re.sub(r'\s*(Corp|Inc|Ltd|PLC|Co|NV|SA|AG|SE|GmbH|Holdings?)[./\s]*', ' ', name)
+    clean = re.sub(r'/\w+$', '', clean)  # Remove /DE etc.
+    return clean.strip()
+
+
+def _strip_html(text):
+    """Remove HTML entities and tags."""
+    text = re.sub(r'<[^>]+>', '', text)
+    text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    text = text.replace("&quot;", '"').replace("&#39;", "'").replace("&apos;", "'")
+    return text.strip()
+
+
+def fetch_stock_news(name, limit=2):
+    """Fetch recent news headlines from Google News RSS."""
+    clean = _clean_stock_name(name)
+    # Add "주가" for stock-relevant results
+    query = urllib.parse.quote(f"{clean} 주가")
+    url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (compatible; OpenClaw/1.0)"
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            xml = resp.read().decode("utf-8")
+        titles = re.findall(r'<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>', xml)
+        results = []
+        for t in titles[2:2 + limit + 2]:  # skip feed/channel title, grab extras
+            t = _strip_html(t)
+            # Remove trailing " - 출처명" for cleaner display
+            t = re.sub(r'\s*-\s*[^-]{2,30}$', '', t)
+            if t and len(t) > 5:
+                results.append(t)
+            if len(results) >= limit:
+                break
+        return results
+    except Exception:
+        return []
+
+
+# ─── Keyword-based analysis from headlines ───────────────────────────
+# (keywords, positive_analysis, negative_analysis)
+KEYWORD_RULES = [
+    # More specific rules first (bio/pharma before AI since "AI주식분석" misleads)
+    (["사노피", "우선순위", "보류", "중단"],
+     "파트너십 재평가 — 핵심 파이프라인 가치 유지 관점에서 비중 조정",
+     "파트너사 우선순위 변경에 따른 리스크 확대로 비중 축소"),
+    (["비만", "GLP", "오젠픽", "위고비", "경구", "알약"],
+     "GLP-1/비만 치료제 시장 확대 모멘텀으로 비중 확대",
+     "비만 치료제 경쟁 심화 우려로 비중 축소"),
+    (["임상", "FDA", "승인", "신약", "파이프라인", "IND", "심사", "바이오", "항체", "ADC"],
+     "임상 진전/파이프라인 기대로 비중 확대",
+     "임상 지연/불확실성으로 비중 축소"),
+    (["합병", "인수", "M&A", "분사", "스핀오프", "재상장"],
+     "M&A/기업구조 변화에 따른 가치 재평가로 비중 확대",
+     "M&A 불확실성으로 비중 축소"),
+    (["출시", "흥행", "신작", "콘텐츠", "게임", "엔터"],
+     "신작 출시/콘텐츠 흥행 기대로 비중 확대",
+     "콘텐츠 부진/기대 하회로 비중 축소"),
+    (["실적", "매출", "영업이익", "순이익", "호실적", "어닝", "흑자"],
+     "실적 호조/서프라이즈 기반 비중 확대",
+     "실적 부진/기대 하회로 비중 축소"),
+    (["목표가", "투자의견", "리포트", "커버리지", "매수의견", "상향"],
+     "애널리스트 목표가 상향에 따른 비중 확대",
+     "애널리스트 목표가 하향에 따른 비중 축소"),
+    (["메모리", "낸드", "NAND", "HBM", "D램", "DRAM", "반도체", "SSD"],
+     "메모리/반도체 업황 개선 기대로 비중 확대",
+     "반도체 업황 둔화 우려로 비중 축소"),
+    (["딥시크", "DeepSeek", "경쟁", "대안"],
+     "AI 경쟁 구도 변화 속 수혜 기대로 비중 확대",
+     "AI 경쟁 심화/밸류에이션 재조정으로 비중 축소"),
+    (["AI", "인공지능", "GPU", "데이터센터"],
+     "AI/데이터센터 수요 확대 수혜 기대로 비중 확대",
+     "AI 경쟁 심화/밸류에이션 부담으로 비중 축소"),
+    (["트럼프", "정책", "관세", "규제", "원자력", "에너지", "우라늄"],
+     "정책 수혜 기대로 비중 확대",
+     "정책/규제 리스크로 비중 축소"),
+    (["수주", "계약", "공급", "파트너", "구매"],
+     "대형 계약/수주 확보에 따른 비중 확대",
+     "수주 감소/계약 불발 우려로 비중 축소"),
+    (["수출", "환율", "진출", "해외", "글로벌"],
+     "해외 시장 확대/수출 호조로 비중 확대",
+     "수출 둔화/환율 악재로 비중 축소"),
+]
+
+
+def analyze_headlines(headlines, diff):
+    """Generate analysis from actual headlines using keyword matching + diff direction."""
+    if not headlines:
+        if diff > 0:
+            return "비중 확대 — 상세 사유 확인 필요"
+        return "비중 축소 — 상세 사유 확인 필요"
+
+    combined = " ".join(headlines)
+    for keywords, pos_analysis, neg_analysis in KEYWORD_RULES:
+        if any(kw in combined for kw in keywords):
+            return pos_analysis if diff > 0 else neg_analysis
+
+    # Fallback: extract key phrase from first headline
+    short = headlines[0][:45]
+    if diff > 0:
+        return f"{short} → 비중 확대"
+    return f"{short} → 비중 축소"
+
+
 def build_news_section(all_movers):
-    """Build news analysis section for TOP 5 stocks across all ETFs."""
+    """Build news analysis section with real headlines for TOP movers."""
     if not all_movers:
         return ""
 
@@ -308,19 +439,17 @@ def build_news_section(all_movers):
         lines.append(f"{i}. {m['name']} ({etf})")
         lines.append(f"   {direction} {diff_str}%p → 현재 {m['weight']:.2f}%")
 
-        # News keyword + speculation
-        if m["diff"] > 3:
-            lines.append(f"   📰 \"{m['name']} 실적 호재 편입 확대\"")
-            lines.append(f"   💭 대규모 비중 확대 → 실적 서프라이즈 or 구조적 성장 기대")
-        elif m["diff"] > 0:
-            lines.append(f"   📰 \"{m['name']} 주가 상승 모멘텀\"")
-            lines.append(f"   💭 섹터 모멘텀 or 실적 기대감 반영한 비중 조정")
-        elif m["diff"] < -3:
-            lines.append(f"   📰 \"{m['name']} 악재 리스크 비중 축소\"")
-            lines.append(f"   💭 대규모 비중 축소 → 실적 부진 or 밸류에이션 부담")
+        # Fetch real news
+        headlines = fetch_stock_news(m["name"], limit=2)
+        if headlines:
+            for h in headlines:
+                lines.append(f"   📰 {h}")
         else:
-            lines.append(f"   📰 \"{m['name']} 주가 하락 이슈\"")
-            lines.append(f"   💭 차익실현 or 섹터 로테이션 전략")
+            lines.append(f"   📰 (최근 뉴스 없음)")
+
+        # Keyword-based analysis from real headlines
+        analysis = analyze_headlines(headlines, m["diff"])
+        lines.append(f"   💭 {analysis}")
         lines.append("")
 
     return "\n".join(lines)
