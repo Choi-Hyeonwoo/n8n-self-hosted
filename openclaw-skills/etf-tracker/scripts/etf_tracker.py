@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-TIMEFOLIO ETF Holdings Tracker v6
-- Page 1: ETF별 가로 3열 비중 변동 TOP 5 / BOTTOM 3 (이미지)
-- Page 2: Holdings TOP 10 (왼쪽) + 주요 종목 뉴스 (오른쪽) 합치기
+TIMEFOLIO ETF Holdings Tracker v8
+- Page 1: ETF별 비중 변동 TOP 5 / BOTTOM 3 + Holdings TOP 10 통합
+- Page 2: 주요 종목 뉴스 분석 전용 (원인 + 추론 2라인, 신규편입 포함)
 - 1D/1W: pdfDate로 실제 과거 날짜 holdings 가져와서 비교
 - 1M: pdfM1 AJAX (timeetf 1개월 전 비교)
 """
@@ -75,7 +75,6 @@ def fetch_period_comparison(idx, period, retries=3):
 
 
 def fetch_page_for_date(idx, cate="001", pdf_date=None):
-    """Fetch holdings page for a specific historical date."""
     url = f"{BASE_URL}?idx={idx}&cate={cate}"
     if pdf_date:
         url += f"&pdfDate={pdf_date}"
@@ -90,7 +89,6 @@ def fetch_page_for_date(idx, cate="001", pdf_date=None):
 
 
 def parse_available_dates(html):
-    """Extract available trading dates from the page HTML."""
     dates = re.findall(r'\d{4}\.\d{2}\.\d{2}', html)
     cutoff = (datetime.now() - timedelta(days=400)).strftime("%Y.%m.%d")
     unique = sorted(set(d for d in dates if d >= cutoff), reverse=True)
@@ -98,7 +96,6 @@ def parse_available_dates(html):
 
 
 def find_comparison_dates(available_dates, current_date_dot):
-    """Return (d1_date, w1_date) in 'YYYY.MM.DD' format."""
     if not available_dates:
         return None, None
     td = datetime.strptime(current_date_dot, "%Y.%m.%d")
@@ -225,14 +222,6 @@ def load_nearest(etf_key, target_date, direction="before", max_days=10):
         return json.load(f)
 
 
-def load_daily(etf_key, current_date):
-    return load_nearest(etf_key, current_date, direction="before", max_days=3)
-
-
-def load_weekly(etf_key, current_date):
-    return load_nearest(etf_key, current_date, direction="before", max_days=10)
-
-
 # ─── Comparison helpers ──────────────────────────────────────────────
 def parse_ajax_changes(ajax_data, ticker_map=None):
     if not ajax_data or "today" not in ajax_data:
@@ -260,19 +249,6 @@ def parse_ajax_changes(ajax_data, ticker_map=None):
     ups.sort(key=lambda x: x["diff"], reverse=True)
     downs.sort(key=lambda x: x["diff"])
     return ups, downs, news
-
-
-def _build_diff_map(holdings, prev_data):
-    """Build {name: diff} map from today vs prev stored data."""
-    if not prev_data:
-        return {}
-    prev_map = {h["name"]: h["weight"] for h in prev_data.get("holdings", [])}
-    result = {}
-    for h in holdings:
-        pw = prev_map.get(h["name"])
-        if pw is not None:
-            result[h["name"]] = round(h["weight"] - pw, 2)
-    return result
 
 
 # ─── Image rendering helpers ─────────────────────────────────────────
@@ -314,33 +290,13 @@ def _diff_color(val):
     return "#333333"
 
 
-def _draw_table_rows(ax, rows, col_defs, y_start, row_h, fonts, fig_w):
-    """Draw table rows. col_defs: [(x, key, align, font_key, color_fn)]"""
-    font, _, _, font_header, font_small, _ = fonts
-    font_map = {"normal": font, "header": font_header, "small": font_small}
-
-    for idx, row in enumerate(rows):
-        y = y_start - idx * row_h
-        if idx % 2 == 0:
-            ax.add_patch(plt.Rectangle((0.15, y - row_h / 2 + 0.02),
-                                        fig_w - 0.3, row_h,
-                                        facecolor="#F8F9FA", edgecolor="none", zorder=1))
-        for x, key, align, fkey, color_fn in col_defs:
-            val = row.get(key, "")
-            text = _diff_str(val) if color_fn else (val if isinstance(val, str) else str(val))
-            color = _diff_color(val) if color_fn else "#333333"
-            f = font_map.get(fkey, font)
-            ax.text(x, y, text, fontproperties=f,
-                    ha=align, va="center", color=color, zorder=3)
-
-
-# ─── Page 1: 비중 변동 — ETF별 가로 3열 ───────────────────────────────
-def render_page_changes(group_label, date, per_etf_changes):
-    """per_etf_changes: list of {short, name, ups: [{name,weight,diff,ticker}], downs: [...]}"""
+# ─── Page 1: 비중 변동 + Holdings TOP 10 통합 ────────────────────────
+def render_page1(group_label, date, per_etf_changes, etf_sections):
+    """Combined: 비중 변동 (top) + Holdings TOP 10 (bottom)."""
     if not HAS_MPL or not per_etf_changes:
         return None
     fonts = _get_fonts()
-    font, font_title, font_section, font_header, font_small, _ = fonts
+    font, font_title, font_section, font_header, font_small, font_news = fonts
 
     n_etfs = len(per_etf_changes)
     col_w = 4.2
@@ -354,8 +310,21 @@ def render_page_changes(group_label, date, per_etf_changes):
     n_ups = 5
     n_downs = 3
 
-    fig_h = (0.7 + sect_h + etf_head_h + col_head_h + n_ups * row_h + 0.2
-             + sect_h + etf_head_h + col_head_h + n_downs * row_h + 0.3)
+    # Holdings dimensions
+    h_row_h = 0.30
+    h_sect_h = 0.36
+    h_col_h = 0.28
+    h_spacing = 0.20
+    n_sects = len(etf_sections)
+
+    changes_h = (sect_h + etf_head_h + col_head_h + n_ups * row_h + 0.2
+                 + sect_h + etf_head_h + col_head_h + n_downs * row_h)
+    holdings_h = sum(
+        h_sect_h + h_col_h + min(len(s["rows"]), 10) * h_row_h
+        for s in etf_sections
+    ) + max(0, n_sects - 1) * h_spacing
+
+    fig_h = 0.7 + changes_h + 0.5 + holdings_h + 0.3
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
     ax.set_xlim(0, fig_w)
     ax.set_ylim(0, fig_h)
@@ -363,26 +332,22 @@ def render_page_changes(group_label, date, per_etf_changes):
     fig.patch.set_facecolor("white")
 
     col_starts = [0.3 + i * (col_w + gap) for i in range(n_etfs)]
-    # relative column positions within each ETF column
     rx = {"rank": 0.15, "ticker": 0.65, "name": 1.85, "weight": 3.05, "diff": 3.75}
 
     # Title
     y = fig_h - 0.4
-    ax.text(fig_w / 2, y, f"TIMEFOLIO {group_label} ETF  비중 변동",
+    ax.text(fig_w / 2, y, f"TIMEFOLIO {group_label} ETF  비중 변동 & Holdings",
             fontproperties=font_title, ha="center", va="center", color="#1A1A2E")
     ax.text(fig_w - 0.3, y, date, fontproperties=font_small,
             ha="right", va="center", color="#888888")
 
-    def _draw_section(y_top, section_label, section_color, bg_tint, n_rows, get_items, diff_color_fn):
+    def _draw_change_section(y_top, label, color, bg_tint, n_rows, get_items, dc_fn):
         y = y_top
-        # Section header (full width)
         ax.add_patch(plt.Rectangle((0.15, y - 0.15), fig_w - 0.3, 0.34,
-                                    facecolor=section_color, edgecolor="none", zorder=2))
-        ax.text(0.4, y + 0.02, section_label, fontproperties=font_section,
+                                    facecolor=color, edgecolor="none", zorder=2))
+        ax.text(0.4, y + 0.02, label, fontproperties=font_section,
                 ha="left", va="center", color="white", zorder=3)
         y -= sect_h
-
-        # ETF sub-headers
         for ci, etf in enumerate(per_etf_changes):
             cx = col_starts[ci]
             ax.add_patch(plt.Rectangle((cx, y - 0.12), col_w, 0.30,
@@ -391,17 +356,13 @@ def render_page_changes(group_label, date, per_etf_changes):
                     fontproperties=font_header, ha="center", va="center",
                     color="white", zorder=3)
         y -= etf_head_h
-
-        # Column headers per ETF
         for ci in range(n_etfs):
             cx = col_starts[ci]
-            for key, label in [("rank", "#"), ("ticker", "Ticker"),
-                                ("name", "종목명"), ("weight", "비중"), ("diff", "변동")]:
-                ax.text(cx + rx[key], y, label, fontproperties=font_header,
+            for key, lbl in [("rank", "#"), ("ticker", "Ticker"),
+                             ("name", "종목명"), ("weight", "비중"), ("diff", "변동")]:
+                ax.text(cx + rx[key], y, lbl, fontproperties=font_header,
                         ha="center", va="center", color="#888888")
         y -= col_head_h
-
-        # Data rows
         for ri in range(n_rows):
             if ri % 2 == 0:
                 for ci in range(n_etfs):
@@ -420,8 +381,8 @@ def render_page_changes(group_label, date, per_etf_changes):
                 ax.text(cx + rx["ticker"], y, item.get("ticker", ""),
                         fontproperties=font_header, ha="center", va="center",
                         color="#2C3E50", zorder=3)
-                name = item["name"][:12] + ".." if len(item["name"]) > 12 else item["name"]
-                ax.text(cx + rx["name"], y, name, fontproperties=font_small,
+                nm = item["name"][:12] + ".." if len(item["name"]) > 12 else item["name"]
+                ax.text(cx + rx["name"], y, nm, fontproperties=font_small,
                         ha="center", va="center", color="#333", zorder=3)
                 ax.text(cx + rx["weight"], y, f"{item['weight']:.1f}%",
                         fontproperties=font_small, ha="center", va="center",
@@ -430,10 +391,8 @@ def render_page_changes(group_label, date, per_etf_changes):
                 if ds != "-":
                     ds += "%p"
                 ax.text(cx + rx["diff"], y, ds, fontproperties=font_small,
-                        ha="center", va="center", color=diff_color_fn(item["diff"]), zorder=3)
+                        ha="center", va="center", color=dc_fn(item["diff"]), zorder=3)
             y -= row_h
-
-        # Vertical separators between columns
         top_y = y_top - sect_h + 0.18
         bot_y = y + 0.05
         for ci in range(1, n_etfs):
@@ -442,15 +401,57 @@ def render_page_changes(group_label, date, per_etf_changes):
                     linewidth=0.8, zorder=1)
         return y
 
-    # ─ UP section ─
     y = fig_h - 0.8
-    y = _draw_section(y, "비중 증가 TOP 5", "#C62828", "#FFF5F5", n_ups,
-                       lambda e: e["ups"][:5], lambda v: "#D32F2F")
-
-    # ─ DOWN section ─
+    y = _draw_change_section(y, "비중 증가 TOP 5", "#C62828", "#FFF5F5", n_ups,
+                              lambda e: e["ups"][:5], lambda v: "#D32F2F")
     y -= 0.2
-    y = _draw_section(y, "비중 감소 BOTTOM 3", "#1565C0", "#F5F8FF", n_downs,
-                       lambda e: e["downs"][:3], lambda v: "#1565C0")
+    y = _draw_change_section(y, "비중 감소 BOTTOM 3", "#1565C0", "#F5F8FF", n_downs,
+                              lambda e: e["downs"][:3], lambda v: "#1565C0")
+
+    # ─ Separator ─
+    y -= 0.25
+    ax.plot([0.3, fig_w - 0.3], [y, y], color="#CCCCCC", linewidth=1.0, zorder=1)
+    y -= 0.15
+
+    # ─ Holdings section (full width) ─
+    hx = {"rank": 0.5, "ticker": 2.0, "name": 5.0,
+          "weight": 7.5, "d1": 9.0, "w1": 10.5, "m1": 12.0}
+    h_col_labels = [("rank", "#"), ("ticker", "Ticker"), ("name", "종목명"),
+                    ("weight", "비중"), ("d1", "1D"), ("w1", "1W"), ("m1", "1M")]
+
+    for si, sect in enumerate(etf_sections):
+        ax.add_patch(plt.Rectangle((0.15, y - 0.12), fig_w - 0.3, 0.30,
+                                    facecolor="#2C3E50", edgecolor="none", zorder=2))
+        ax.text(0.4, y + 0.02, f"{sect['name']}  ({sect['count']}종목)",
+                fontproperties=font_section, ha="left", va="center",
+                color="white", zorder=3)
+        y -= h_sect_h
+        for ck, cl in h_col_labels:
+            ax.text(hx[ck], y, cl, fontproperties=font_header,
+                    ha="center", va="center", color="#888888")
+        y -= h_col_h
+        for ri, row in enumerate(sect["rows"][:10]):
+            if ri % 2 == 0:
+                ax.add_patch(plt.Rectangle((0.15, y - h_row_h / 2 + 0.01),
+                                            fig_w - 0.3, h_row_h,
+                                            facecolor="#F8F9FA", edgecolor="none", zorder=1))
+            ax.text(hx["rank"], y, row["rank"], fontproperties=font_small,
+                    ha="center", va="center", color="#555", zorder=3)
+            ax.text(hx["ticker"], y, row["ticker"], fontproperties=font_header,
+                    ha="center", va="center", color="#2C3E50", zorder=3)
+            ax.text(hx["name"], y, row["name"], fontproperties=font_small,
+                    ha="center", va="center", color="#333", zorder=3)
+            ax.text(hx["weight"], y, row["weight"], fontproperties=font_small,
+                    ha="center", va="center", color="#333", zorder=3)
+            for k in ("d1", "w1", "m1"):
+                ds = _diff_str(row[k])
+                if ds != "-" and ds != "NEW":
+                    ds += "%p"
+                ax.text(hx[k], y, ds, fontproperties=font_small,
+                        ha="center", va="center", color=_diff_color(row[k]), zorder=3)
+            y -= h_row_h
+        if si < n_sects - 1:
+            y -= h_spacing
 
     glabel = group_label.replace(" ", "")
     path = os.path.join(IMG_DIR, f"etf_p1_{glabel}_{date}.png")
@@ -459,39 +460,31 @@ def render_page_changes(group_label, date, per_etf_changes):
     return path
 
 
-# ─── Page 2: Holdings TOP 10 (left) + 뉴스 (right) combined ─────────
-def render_page_holdings_news(group_label, date, etf_sections, per_etf_news):
-    """
-    etf_sections: [{name, count, rows: [{rank,ticker,name,weight,d1,w1,m1}]}]
-    per_etf_news: [{short, movers: [{name,ticker,diff,weight,news_items,analysis}]}]
-    """
-    if not HAS_MPL or not etf_sections:
+# ─── Page 2: 주요 종목 뉴스 분석 전용 ────────────────────────────────
+def render_page2_news(group_label, date, per_etf_news):
+    """Full-width news analysis page with cause + reasoning."""
+    if not HAS_MPL or not per_etf_news:
         return None
     fonts = _get_fonts()
     font, font_title, font_section, font_header, font_small, font_news = fonts
 
-    row_h = 0.32
-    news_line_h = 0.28
-    sect_head_h = 0.40
-    col_head_h = 0.30
+    fig_w = 14.0
+    line_h = 0.30
+    mover_h = 0.34
+    sect_h = 0.40
     spacing = 0.30
-    left_w = 8.2
-    right_w = 7.0
-    fig_w = left_w + right_w + 0.6  # 15.8
 
-    n_sects = len(etf_sections)
-    section_content_heights = []
-    for si, sect in enumerate(etf_sections):
-        left_h = col_head_h + len(sect["rows"]) * row_h
-        right_h = 0
-        if si < len(per_etf_news):
-            for m in per_etf_news[si].get("movers", []):
-                right_h += news_line_h  # header
-                right_h += min(len(m.get("news_items", [])), 2) * news_line_h
-                right_h += news_line_h + 0.06  # analysis + padding
-        section_content_heights.append(max(left_h, right_h))
-    fig_h = (0.7 + n_sects * sect_head_h + sum(section_content_heights)
-             + (n_sects - 1) * spacing + 0.4)
+    # Calculate height
+    total_h = 0.7
+    for en in per_etf_news:
+        total_h += sect_h
+        for m in en.get("movers", []):
+            total_h += mover_h
+            total_h += min(len(m.get("news_items", [])), 2) * line_h
+            total_h += line_h * 2 + 0.08
+        total_h += spacing
+    total_h += 0.3
+    fig_h = max(total_h, 3.0)
 
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
     ax.set_xlim(0, fig_w)
@@ -499,116 +492,92 @@ def render_page_holdings_news(group_label, date, etf_sections, per_etf_news):
     ax.axis("off")
     fig.patch.set_facecolor("white")
 
-    # Left side columns (holdings)
-    lx = {"rank": 0.3, "ticker": 1.1, "name": 2.7,
-          "weight": 4.3, "d1": 5.4, "w1": 6.4, "m1": 7.5}
-    col_labels = [("rank", "#"), ("ticker", "Ticker"), ("name", "종목명"),
-                  ("weight", "비중"), ("d1", "1D"), ("w1", "1W"), ("m1", "1M")]
-
-    # Right side starts at
-    rx_start = left_w + 0.3
-
-    # Title
     y = fig_h - 0.4
-    ax.text(fig_w / 2, y, f"TIMEFOLIO {group_label} ETF  Holdings & 뉴스",
+    ax.text(fig_w / 2, y, f"TIMEFOLIO {group_label} ETF  주요 종목 뉴스 분석",
             fontproperties=font_title, ha="center", va="center", color="#1A1A2E")
     ax.text(fig_w - 0.3, y, date, fontproperties=font_small,
             ha="right", va="center", color="#888888")
     y -= 0.48
 
-    for si, sect in enumerate(etf_sections):
-        # Section header (full width)
+    for si, en in enumerate(per_etf_news):
         ax.add_patch(plt.Rectangle((0.15, y - 0.15), fig_w - 0.3, 0.35,
                                     facecolor="#2C3E50", edgecolor="none", zorder=2))
-        ax.text(0.4, y + 0.02, f"{sect['name']}  ({sect['count']}종목)",
+        ax.text(0.4, y + 0.02, en["short"],
                 fontproperties=font_section, ha="left", va="center",
                 color="white", zorder=3)
-        ax.text(rx_start, y + 0.02, "주요 변동 종목 뉴스",
-                fontproperties=font_header, ha="left", va="center",
-                color="#B0BEC5", zorder=3)
-        y -= sect_head_h
+        y -= sect_h
 
-        # Left: column headers
-        for ck, cl in col_labels:
-            ax.text(lx[ck], y, cl, fontproperties=font_header,
-                    ha="center", va="center", color="#888888")
-        y -= col_head_h
-
-        section_top_y = y
-
-        # Left: data rows
-        for ri, row in enumerate(sect["rows"]):
-            if ri % 2 == 0:
-                ax.add_patch(plt.Rectangle((0.15, y - row_h / 2 + 0.01),
-                                            left_w - 0.15, row_h,
-                                            facecolor="#F8F9FA", edgecolor="none", zorder=1))
-            ax.text(lx["rank"], y, row["rank"], fontproperties=font_small,
-                    ha="center", va="center", color="#555", zorder=3)
-            ax.text(lx["ticker"], y, row["ticker"], fontproperties=font_header,
-                    ha="center", va="center", color="#2C3E50", zorder=3)
-            ax.text(lx["name"], y, row["name"], fontproperties=font_small,
-                    ha="center", va="center", color="#333", zorder=3)
-            ax.text(lx["weight"], y, row["weight"], fontproperties=font_small,
-                    ha="center", va="center", color="#333", zorder=3)
-            for k in ("d1", "w1", "m1"):
-                ds = _diff_str(row[k])
-                if ds != "-" and ds != "NEW":
-                    ds += "%p"
-                ax.text(lx[k], y, ds, fontproperties=font_small,
-                        ha="center", va="center", color=_diff_color(row[k]), zorder=3)
-            y -= row_h
-
-        # Vertical separator
-        ax.plot([left_w + 0.1, left_w + 0.1],
-                [y + 0.05, section_top_y + col_head_h - 0.05],
-                color="#DDDDDD", linewidth=0.8, zorder=1)
-
-        # Right: news for this ETF's movers
-        ny = section_top_y
-        etf_news = per_etf_news[si] if si < len(per_etf_news) else {"movers": []}
-        movers = etf_news.get("movers", [])
-
+        movers = en.get("movers", [])
         for mi, m in enumerate(movers):
-            dc = "#D32F2F" if m["diff"] > 0 else "#1565C0"
-            ds = _diff_str(m["diff"])
-            tk = m.get("ticker", "")
-            # Mover header
-            name_trunc = m["name"][:14] + ".." if len(m["name"]) > 14 else m["name"]
-            header = f"{tk}  {name_trunc}" if tk else name_trunc
-            ax.text(rx_start, ny, header, fontproperties=font_header,
-                    ha="left", va="center", color="#1A1A2E", zorder=3)
-            tag = f"비중 {m['weight']:.1f}%  {ds}%p"
-            ax.text(fig_w - 0.3, ny, tag, fontproperties=font_small,
-                    ha="right", va="center", color=dc, zorder=3)
-            ny -= news_line_h
+            is_new = m.get("is_new", False)
+            diff = m.get("diff")
 
-            # Headlines (1-2)
+            if is_new:
+                dc = "#4CAF50"
+                tag = f"비중 {m['weight']:.1f}%  신규편입"
+                bg = "#E8F5E9"
+            elif diff is not None and diff > 0:
+                dc = "#D32F2F"
+                tag = f"비중 {m['weight']:.1f}%  {_diff_str(diff)}%p"
+                bg = "#FFF5F5"
+            else:
+                dc = "#1565C0"
+                tag = f"비중 {m['weight']:.1f}%  {_diff_str(diff)}%p"
+                bg = "#F5F8FF"
+
+            # Mover header bar
+            ax.add_patch(plt.Rectangle((0.15, y - mover_h / 2 + 0.01),
+                                        fig_w - 0.3, mover_h,
+                                        facecolor=bg, edgecolor="none", zorder=1))
+            tk = m.get("ticker", "")
+            nm = m["name"][:16] + ".." if len(m["name"]) > 16 else m["name"]
+            header = f"{'[신규] ' if is_new else ''}{tk}  {nm}" if tk else f"{'[신규] ' if is_new else ''}{nm}"
+            ax.text(0.4, y, header, fontproperties=font_header,
+                    ha="left", va="center", color="#1A1A2E", zorder=3)
+            ax.text(fig_w - 0.3, y, tag, fontproperties=font_small,
+                    ha="right", va="center", color=dc, zorder=3)
+            y -= mover_h
+
+            # Headlines
             news_items = m.get("news_items", [])
             for ni in news_items[:2]:
                 src = ni.get("ib") or ni.get("source", "")
                 prefix = f"[{src}] " if src else ""
                 title = ni.get("title", "")
-                max_len = 42
-                if len(title) > max_len:
-                    title = title[:max_len - 2] + ".."
-                ax.text(rx_start + 0.15, ny, f"{prefix}{title}",
+                if len(title) > 65:
+                    title = title[:63] + ".."
+                ax.text(0.7, y, f"• {prefix}{title}",
                         fontproperties=font_news, ha="left", va="center",
                         color="#555555", zorder=3)
-                ny -= news_line_h
+                y -= line_h
 
-            # Analysis
-            analysis = m.get("analysis", "")
-            if len(analysis) > 55:
-                analysis = analysis[:53] + ".."
-            ax.text(rx_start + 0.15, ny, f"-> {analysis}",
+            # Analysis: cause + reasoning
+            analysis = m.get("analysis", {})
+            if isinstance(analysis, str):
+                cause = analysis
+                reasoning = ""
+            else:
+                cause = analysis.get("cause", "")
+                reasoning = analysis.get("reasoning", "")
+
+            if len(cause) > 62:
+                cause = cause[:60] + ".."
+            ax.text(0.7, y, f"[원인] {cause}",
                     fontproperties=font_news, ha="left", va="center",
-                    color=dc, zorder=3)
-            ny -= news_line_h + 0.06
+                    color="#37474F", zorder=3)
+            y -= line_h
 
-        # Use the lower of left/right panel ends
-        y = min(y, ny)
+            if reasoning:
+                if len(reasoning) > 62:
+                    reasoning = reasoning[:60] + ".."
+                ax.text(0.7, y, f"[추론] {reasoning}",
+                        fontproperties=font_news, ha="left", va="center",
+                        color=dc, zorder=3)
+                y -= line_h
 
-        if si < n_sects - 1:
+            y -= 0.08
+
+        if si < len(per_etf_news) - 1:
             y -= spacing
 
     glabel = group_label.replace(" ", "")
@@ -664,7 +633,6 @@ def _strip_html(text):
     text = re.sub(r'<[^>]+>', '', text)
     text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
     text = text.replace("&quot;", '"').replace("&#39;", "'").replace("&apos;", "'")
-    # Strip emojis and special unicode symbols
     text = re.sub(r'[\U00010000-\U0010FFFF]', '', text)
     return text.strip()
 
@@ -696,7 +664,6 @@ _NOISE_PATTERNS = [
 
 
 def _is_noise_headline(title):
-    """Filter out meaningless price-movement headlines."""
     for pat in _NOISE_PATTERNS:
         if re.search(pat, title):
             return True
@@ -736,78 +703,137 @@ def fetch_stock_news(name, limit=2):
         return []
 
 
-# ─── Keyword-based analysis ──────────────────────────────────────────
+# ─── Keyword-based analysis (원인 + 추론) ────────────────────────────
+# Each rule: (keywords, (pos_cause, pos_reasoning), (neg_cause, neg_reasoning))
 KEYWORD_RULES = [
     (["사노피", "우선순위", "보류", "중단"],
-     "파트너십 재평가 — 파이프라인 가치 유지 관점 비중 조정",
-     "파트너사 우선순위 변경 → 리스크 확대로 비중 축소"),
+     ("파트너사 전략 재조정 속 파이프라인 가치 재평가",
+      "독자 파이프라인 성장 가능성 주목 → 비중 확대"),
+     ("파트너사 개발 우선순위 하향/보류 결정",
+      "기술이전 불확실성 확대 → 리스크 관리 차원 비중 축소")),
     (["비만", "GLP", "오젠픽", "위고비", "경구", "알약"],
-     "GLP-1/비만 치료제 시장 확대 모멘텀 → 비중 확대",
-     "비만 치료제 경쟁 심화 우려 → 비중 축소"),
+     ("GLP-1/비만 치료제 시장 급성장 및 경구제 개발 진전",
+      "비만 치료제 파이프라인 가치 부각 → 비중 확대"),
+     ("비만 치료제 경쟁 심화 및 파이프라인 차별화 약화",
+      "경쟁 격화에 따른 밸류에이션 부담 → 비중 축소")),
     (["임상", "FDA", "승인", "신약", "파이프라인", "IND", "심사", "바이오", "항체", "ADC"],
-     "임상 진전/파이프라인 기대 → 비중 확대",
-     "임상 지연/불확실성 → 비중 축소"),
+     ("임상시험 진전 또는 FDA 승인/심사 기대",
+      "파이프라인 가치 반영 → 비중 확대"),
+     ("임상 지연·실패 또는 FDA 심사 불확실성",
+      "파이프라인 리스크 확대 → 비중 축소")),
     (["합병", "인수", "M&A", "분사", "스핀오프"],
-     "M&A/기업구조 변화 → 가치 재평가 비중 확대",
-     "M&A 불확실성 → 비중 축소"),
+     ("M&A 또는 기업구조 변화로 가치 재평가",
+      "사업 재편 시너지 기대 → 비중 확대"),
+     ("M&A 또는 구조 변화에 따른 불확실성",
+      "통합 리스크 및 가치 희석 우려 → 비중 축소")),
     (["출시", "흥행", "신작", "콘텐츠", "게임", "엔터"],
-     "신작 출시/콘텐츠 흥행 기대 → 비중 확대",
-     "콘텐츠 부진/기대 하회 → 비중 축소"),
+     ("신작 출시 또는 콘텐츠 흥행 모멘텀",
+      "매출 성장 가시화 → 비중 확대"),
+     ("콘텐츠 부진 또는 신작 기대 하회",
+      "매출 성장 둔화 우려 → 비중 축소")),
     (["실적", "매출", "영업이익", "순이익", "호실적", "어닝", "흑자"],
-     "실적 호조/서프라이즈 → 비중 확대",
-     "실적 부진/기대 하회 → 비중 축소"),
+     ("실적 서프라이즈 — 매출·이익 시장 예상 상회",
+      "어닝 모멘텀 지속 기대 → 비중 확대"),
+     ("실적 부진 — 매출·이익 시장 예상 하회",
+      "실적 하향 사이클 진입 우려 → 비중 축소")),
     (["목표가", "투자의견", "리포트", "커버리지", "매수의견", "상향"],
-     "애널리스트 목표가 상향 → 비중 확대",
-     "애널리스트 목표가 하향 → 비중 축소"),
+     ("증권사 목표가 상향 또는 커버리지 개시",
+      "시장 컨센서스 상향 → 비중 확대"),
+     ("증권사 목표가 하향 또는 투자의견 하향",
+      "시장 기대치 하락 → 비중 축소")),
     (["메모리", "낸드", "NAND", "HBM", "D램", "DRAM", "반도체", "SSD"],
-     "메모리/반도체 업황 개선 → 비중 확대",
-     "반도체 업황 둔화 우려 → 비중 축소"),
+     ("메모리/반도체 업황 개선 및 수요 확대",
+      "업사이클 수혜 기대 → 비중 확대"),
+     ("반도체 업황 둔화 또는 수급 악화",
+      "다운사이클 우려 → 비중 축소")),
     (["딥시크", "DeepSeek", "경쟁", "대안"],
-     "AI 경쟁 구도 변화 속 수혜 → 비중 확대",
-     "AI 경쟁 심화/밸류에이션 재조정 → 비중 축소"),
+     ("AI 경쟁 구도 변화 속 새로운 수혜 가능성",
+      "기술 차별화 또는 대안 부각 → 비중 확대"),
+     ("AI 경쟁 심화로 밸류에이션 재조정",
+      "경쟁 격화에 따른 성장 우려 → 비중 축소")),
     (["AI", "인공지능", "GPU", "데이터센터"],
-     "AI/데이터센터 수요 확대 수혜 → 비중 확대",
-     "AI 경쟁 심화/밸류에이션 부담 → 비중 축소"),
+     ("AI/데이터센터 수요 폭발적 성장",
+      "AI 인프라 투자 확대 수혜 → 비중 확대"),
+     ("AI 경쟁 심화 또는 밸류에이션 부담",
+      "성장 대비 고평가 우려 → 비중 축소")),
     (["트럼프", "정책", "관세", "규제", "원자력", "에너지", "우라늄"],
-     "정책 수혜 기대 → 비중 확대",
-     "정책/규제 리스크 → 비중 축소"),
+     ("정책 수혜 기대 — 규제 완화 또는 보조금 확대",
+      "정책 모멘텀에 따른 실적 개선 기대 → 비중 확대"),
+     ("정책·규제 리스크 — 관세 또는 규제 강화",
+      "사업 환경 악화 우려 → 비중 축소")),
     (["수주", "계약", "공급", "파트너", "구매"],
-     "대형 계약/수주 확보 → 비중 확대",
-     "수주 감소/계약 불발 → 비중 축소"),
+     ("대형 계약 체결 또는 공급 파트너십 확보",
+      "매출 가시성 확대 → 비중 확대"),
+     ("수주 감소 또는 계약 불발/지연",
+      "매출 파이프라인 약화 → 비중 축소")),
     (["수출", "환율", "진출", "해외", "글로벌"],
-     "해외 시장 확대/수출 호조 → 비중 확대",
-     "수출 둔화/환율 악재 → 비중 축소"),
+     ("해외 시장 진출 확대 또는 수출 호조",
+      "글로벌 성장 동력 확보 → 비중 확대"),
+     ("수출 둔화 또는 환율 악재",
+      "해외 매출 감소 우려 → 비중 축소")),
     (["로봇", "휴머노이드", "로보틱스", "자율주행", "무인"],
-     "로봇/자율화 성장 기대 → 비중 확대",
-     "로봇/자율화 성장 둔화 우려 → 비중 축소"),
+     ("로봇/휴머노이드 시장 성장 가속화",
+      "신성장 동력 본격화 기대 → 비중 확대"),
+     ("로봇/자율화 기술 상용화 지연",
+      "성장 기대 후퇴 → 비중 축소")),
     (["K뷰티", "화장품", "뷰티", "스킨케어"],
-     "K뷰티 수출 확대/트렌드 수혜 → 비중 확대",
-     "K뷰티 성장 둔화 → 비중 축소"),
+     ("K뷰티 글로벌 수출 확대 및 트렌드 수혜",
+      "해외 매출 성장 모멘텀 → 비중 확대"),
+     ("K뷰티 성장 둔화 또는 경쟁 심화",
+      "수출 성장 둔화 우려 → 비중 축소")),
     (["우주", "위성", "발사", "SpaceX", "스페이스"],
-     "우주/방산 사업 확대 → 비중 확대",
-     "우주 사업 불확실성 → 비중 축소"),
+     ("우주 산업 성장 및 발사 사업 확대",
+      "우주 사업 수혜 기대 → 비중 확대"),
+     ("우주 사업 수주 감소 또는 기술 경쟁 심화",
+      "우주 사업 불확실성 → 비중 축소")),
     (["광모듈", "광트랜시버", "통신장비", "네트워크"],
-     "AI 인프라/광통신 수요 확대 → 비중 확대",
-     "광통신 수요 둔화/경쟁 심화 → 비중 축소"),
+     ("AI 인프라 확대에 따른 광통신 수요 급증",
+      "데이터센터 연결 수혜 → 비중 확대"),
+     ("광통신 수요 둔화 또는 가격 경쟁 심화",
+      "마진 축소 우려 → 비중 축소")),
     (["배터리", "리튬", "2차전지", "양극재", "음극재", "전해질"],
-     "배터리/2차전지 시장 확대 → 비중 확대",
-     "배터리 수요 둔화/원자재 부담 → 비중 축소"),
+     ("배터리/2차전지 시장 확대 및 수요 회복",
+      "EV 성장 수혜 기대 → 비중 확대"),
+     ("배터리 수요 둔화 또는 원자재 가격 부담",
+      "업황 악화 우려 → 비중 축소")),
     (["방산", "방위", "무기", "국방", "미사일", "천무"],
-     "방산 수출 확대/지정학 수혜 → 비중 확대",
-     "방산 수주 감소 → 비중 축소"),
+     ("방산 수출 확대 및 지정학적 수혜",
+      "수출 계약 확대 모멘텀 → 비중 확대"),
+     ("방산 수주 감소 또는 예산 축소",
+      "매출 가시성 약화 → 비중 축소")),
 ]
 
 
-def analyze_headlines(news_items, diff):
+def analyze_headlines(news_items, diff, is_new=False):
     headlines = [n["title"] for n in news_items] if news_items else []
+
+    if is_new:
+        if not headlines:
+            return {"cause": "신규 편입 종목",
+                    "reasoning": "포트폴리오 다변화 또는 신규 테마 반영"}
+        combined = " ".join(headlines)
+        for keywords, pos_t, neg_t in KEYWORD_RULES:
+            if any(kw in combined for kw in keywords):
+                return {"cause": pos_t[0],
+                        "reasoning": "신규 편입 — " + pos_t[1].split(" → ")[0]}
+        return {"cause": headlines[0][:50],
+                "reasoning": "신규 편입 — 포트폴리오 다변화"}
+
     if not headlines:
-        return "비중 확대 — 상세 사유 확인 필요" if diff > 0 else "비중 축소 — 상세 사유 확인 필요"
+        if diff > 0:
+            return {"cause": "상세 사유 확인 필요", "reasoning": "비중 확대 판단"}
+        return {"cause": "상세 사유 확인 필요", "reasoning": "비중 축소 판단"}
+
     combined = " ".join(headlines)
-    for keywords, pos_a, neg_a in KEYWORD_RULES:
+    for keywords, pos_t, neg_t in KEYWORD_RULES:
         if any(kw in combined for kw in keywords):
-            return pos_a if diff > 0 else neg_a
-    short = headlines[0][:45]
-    return f"{short} → 비중 확대" if diff > 0 else f"{short} → 비중 축소"
+            t = pos_t if diff > 0 else neg_t
+            return {"cause": t[0], "reasoning": t[1]}
+
+    short = headlines[0][:50]
+    if diff > 0:
+        return {"cause": short, "reasoning": "상기 사유에 의한 비중 확대 판단"}
+    return {"cause": short, "reasoning": "상기 사유에 의한 비중 축소 판단"}
 
 
 # ─── Text formatting (fallback) ──────────────────────────────────────
@@ -849,13 +875,22 @@ def build_text_report(group_label, date, per_etf_changes,
         lines += ["-" * 32, "[ 주요 종목 뉴스 분석 ]", ""]
         for i, m in enumerate(movers_with_news, 1):
             tk = _ticker_label(m)
-            ds = _diff_str(m["diff"])
-            lines.append(f"{i}. {tk}{m['name']} ({m['etf_short']})  {ds}%p -> {m['weight']:.1f}%")
+            is_new = m.get("is_new", False)
+            if is_new:
+                lines.append(f"{i}. {tk}{m['name']} ({m['etf_short']})  [신규편입] {m['weight']:.1f}%")
+            else:
+                ds = _diff_str(m["diff"])
+                lines.append(f"{i}. {tk}{m['name']} ({m['etf_short']})  {ds}%p -> {m['weight']:.1f}%")
             for n in m.get("news_items", [])[:2]:
                 src = n.get("ib") or n.get("source", "")
                 prefix = f"[{src}] " if src else ""
                 lines.append(f"   {prefix}{n['title']}")
-            lines.append(f"   -> {m.get('analysis', '')}")
+            analysis = m.get("analysis", {})
+            if isinstance(analysis, dict):
+                lines.append(f"   [원인] {analysis.get('cause', '')}")
+                lines.append(f"   [추론] {analysis.get('reasoning', '')}")
+            else:
+                lines.append(f"   -> {analysis}")
             lines.append("")
 
     if errors:
@@ -872,10 +907,9 @@ def run(etf_keys=None, generate_images=True):
     date = None
     errors = []
 
-    # Collect per-ETF data
-    per_etf_changes = []   # for page 1 (per-ETF ups/downs)
-    etf_sections = []      # for page 2 left
-    per_etf_news = []      # for page 2 right
+    per_etf_changes = []
+    etf_sections = []
+    per_etf_news = []
 
     for key in etf_keys:
         if key not in ETFS:
@@ -893,12 +927,10 @@ def run(etf_keys=None, generate_images=True):
 
             ticker_map = {h["name"]: h.get("ticker", "") for h in holdings}
 
-            # Parse available dates for 1D / 1W comparison
             avail_dates = parse_available_dates(html)
             current_dot = page_date.replace("-", ".")
             d1_date, w1_date = find_comparison_dates(avail_dates, current_dot)
 
-            # Fetch 1D historical holdings
             d1_map = {}
             if d1_date:
                 d1_html = fetch_page_for_date(cfg["idx"], cfg["cate"], d1_date)
@@ -906,7 +938,6 @@ def run(etf_keys=None, generate_images=True):
                     d1_holdings = parse_full_holdings(d1_html)
                     d1_map = build_diff_map_from_weights(holdings, build_weight_map(d1_holdings))
 
-            # Fetch 1W historical holdings
             w1_map = {}
             if w1_date:
                 w1_html = fetch_page_for_date(cfg["idx"], cfg["cate"], w1_date)
@@ -914,7 +945,6 @@ def run(etf_keys=None, generate_images=True):
                     w1_holdings = parse_full_holdings(w1_html)
                     w1_map = build_diff_map_from_weights(holdings, build_weight_map(w1_holdings))
 
-            # 1M from AJAX
             m1 = fetch_period_comparison(cfg["idx"], "pdfM1")
             m1_map = {}
             if m1 and "today" in m1:
@@ -928,7 +958,6 @@ def run(etf_keys=None, generate_images=True):
                         except ValueError:
                             pass
 
-            # Parse AJAX changes for page 1 (per-ETF)
             m1_ups, m1_downs, m1_news = parse_ajax_changes(m1, ticker_map)
             per_etf_changes.append({
                 "short": cfg["short"],
@@ -937,7 +966,7 @@ def run(etf_keys=None, generate_images=True):
                 "downs": m1_downs[:3],
             })
 
-            # Page 2 left: holdings rows
+            # Holdings rows
             rows = []
             for i, h in enumerate(holdings[:10], 1):
                 name = h["name"][:18] + ".." if len(h["name"]) > 18 else h["name"]
@@ -957,7 +986,7 @@ def run(etf_keys=None, generate_images=True):
                 "rows": rows,
             })
 
-            # Page 2 right: per-ETF top movers with news
+            # Movers with news (including 신규편입)
             is_overseas = key in OVERSEAS_KEYS
             n_movers = 5 if is_overseas else 3
             etf_movers_raw = sorted(
@@ -973,6 +1002,19 @@ def run(etf_keys=None, generate_images=True):
                     "etf_short": cfg["short"],
                     "news_items": news_items,
                     "analysis": analysis,
+                    "is_new": False,
+                })
+            # 신규편입 stocks
+            for item in m1_news[:2]:
+                news_items = fetch_stock_news(item["name"], limit=2)
+                analysis = analyze_headlines(news_items, 0, is_new=True)
+                etf_movers.append({
+                    **item,
+                    "diff": 0,
+                    "etf_short": cfg["short"],
+                    "news_items": news_items,
+                    "analysis": analysis,
+                    "is_new": True,
                 })
             per_etf_news.append({
                 "short": cfg["short"],
@@ -982,7 +1024,6 @@ def run(etf_keys=None, generate_images=True):
         except Exception as e:
             errors.append(f"{key}: {e}")
 
-    # Determine group
     keys_set = set(etf_keys)
     if keys_set <= set(OVERSEAS_KEYS):
         group_label = "해외"
@@ -994,22 +1035,19 @@ def run(etf_keys=None, generate_images=True):
     if date is None:
         date = datetime.now().strftime("%Y-%m-%d")
 
-    # Generate images
     image_paths = []
     if generate_images and HAS_MPL:
-        p1 = render_page_changes(group_label, date, per_etf_changes)
+        p1 = render_page1(group_label, date, per_etf_changes, etf_sections)
         if p1:
             image_paths.append(p1)
-        p2 = render_page_holdings_news(group_label, date, etf_sections, per_etf_news)
+        p2 = render_page2_news(group_label, date, per_etf_news)
         if p2:
             image_paths.append(p2)
 
-    # Flatten movers for text report
     all_movers_news = []
     for en in per_etf_news:
         all_movers_news.extend(en.get("movers", []))
 
-    # Text report (fallback)
     report = build_text_report(group_label, date, per_etf_changes,
                                 etf_sections, all_movers_news, errors)
     return report, image_paths
@@ -1028,7 +1066,6 @@ if __name__ == "__main__":
         if images:
             print(f"\nImages: {', '.join(images)}")
     else:
-        # Run both groups separately
         all_images = []
         for group_keys in [DOMESTIC_KEYS, OVERSEAS_KEYS]:
             report, images = run(group_keys)
