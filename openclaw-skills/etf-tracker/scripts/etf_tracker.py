@@ -1358,6 +1358,198 @@ def build_analysis_summary(group_label, date, per_etf_changes, per_etf_news, use
 
 
 # ─── Main ─────────────────────────────────────────────────────────────
+
+# Knowledge base path for Obsidian
+KNOWLEDGE_BASE = os.path.join(os.path.dirname(__file__), "..", "knowledge")
+
+
+def save_to_obsidian(group_label, date, per_etf_changes, per_etf_news, analysis_summary):
+    """Save analysis results to Obsidian knowledge base for RON's market learning."""
+    if not os.path.exists(KNOWLEDGE_BASE):
+        os.makedirs(KNOWLEDGE_BASE, exist_ok=True)
+
+    # 1. Save daily report
+    daily_dir = os.path.join(KNOWLEDGE_BASE, "daily")
+    os.makedirs(daily_dir, exist_ok=True)
+
+    label_map = {"국내": "domestic", "해외": "overseas", "전체": "all"}
+    filename = f"{date}_{label_map.get(group_label, group_label)}.md"
+
+    # Convert HTML to Markdown for Obsidian
+    md_summary = analysis_summary.replace("<b>", "**").replace("</b>", "**")
+
+    daily_content = f"""# {group_label} ETF 분석 - {date}
+
+## 분석 요약
+{md_summary}
+
+## 메타데이터
+- 생성일시: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+- 분석 대상: {group_label} ETF
+- ETF 수: {len(per_etf_changes)}
+
+## 관련 링크
+"""
+    # Add stock links
+    all_stocks = set()
+    for news in per_etf_news:
+        for m in news.get("movers", []):
+            all_stocks.add(m["name"])
+
+    for stock in sorted(all_stocks):
+        daily_content += f"- [[stocks/{stock}]]\n"
+
+    # Add ETF links
+    daily_content += "\n"
+    for changes in per_etf_changes:
+        etf_name = changes["etf_name"]
+        daily_content += f"- [[etfs/{etf_name}]]\n"
+
+    with open(os.path.join(daily_dir, filename), "w", encoding="utf-8") as f:
+        f.write(daily_content)
+
+    # 2. Update stock profiles with history
+    stocks_dir = os.path.join(KNOWLEDGE_BASE, "stocks")
+    os.makedirs(stocks_dir, exist_ok=True)
+
+    for news in per_etf_news:
+        etf_name = news["etf_name"]
+        for m in news.get("movers", []):
+            stock_name = m["name"]
+            stock_file = os.path.join(stocks_dir, f"{stock_name}.md")
+
+            # Get existing content or create new
+            if os.path.exists(stock_file):
+                with open(stock_file, "r", encoding="utf-8") as f:
+                    existing = f.read()
+            else:
+                profile = _STOCK_PROFILES.get(stock_name, "프로필 미등록")
+                existing = f"""# {stock_name}
+
+## 프로필
+{profile}
+
+## 변동 히스토리
+| 날짜 | ETF | 변동 | 판단 |
+|------|-----|------|------|
+"""
+
+            # Add new history entry
+            diff = m.get("diff", 0)
+            analysis = m.get("analysis", {})
+            judgment = ""
+            if isinstance(analysis, dict):
+                judgment = analysis.get("judgment", "")[:30]
+
+            diff_str = f"+{diff:.2f}%p" if diff > 0 else f"{diff:.2f}%p"
+            if m.get("is_new"):
+                diff_str = "신규편입"
+
+            new_entry = f"| {date} | {etf_name} | {diff_str} | {judgment} |\n"
+
+            # Insert after header row if not already present
+            if date not in existing:
+                # Find the header row and insert after
+                lines = existing.split("\n")
+                for i, line in enumerate(lines):
+                    if line.startswith("|---"):
+                        lines.insert(i + 1, new_entry.strip())
+                        break
+                existing = "\n".join(lines)
+
+                with open(stock_file, "w", encoding="utf-8") as f:
+                    f.write(existing)
+
+    # 3. Update ETF profiles
+    etfs_dir = os.path.join(KNOWLEDGE_BASE, "etfs")
+    os.makedirs(etfs_dir, exist_ok=True)
+
+    for changes in per_etf_changes:
+        etf_name = changes["etf_name"]
+        etf_file = os.path.join(etfs_dir, f"{etf_name}.md")
+
+        if os.path.exists(etf_file):
+            with open(etf_file, "r", encoding="utf-8") as f:
+                existing = f.read()
+        else:
+            existing = f"""# {etf_name}
+
+## 전략 히스토리
+| 날짜 | 주요 증가 | 주요 감소 | 방향성 |
+|------|----------|----------|--------|
+"""
+
+        if date not in existing:
+            ups = changes.get("ups", [])
+            downs = changes.get("downs", [])
+            top_up = ups[0]["name"] if ups else "-"
+            top_down = downs[0]["name"] if downs else "-"
+            direction = "확대" if len(ups) > len(downs) else "축소" if len(downs) > len(ups) else "중립"
+
+            new_entry = f"| {date} | [[stocks/{top_up}]] | [[stocks/{top_down}]] | {direction} |\n"
+
+            lines = existing.split("\n")
+            for i, line in enumerate(lines):
+                if line.startswith("|---"):
+                    lines.insert(i + 1, new_entry.strip())
+                    break
+            existing = "\n".join(lines)
+
+            with open(etf_file, "w", encoding="utf-8") as f:
+                f.write(existing)
+
+    # 4. Update theme tracking
+    themes_dir = os.path.join(KNOWLEDGE_BASE, "themes")
+    os.makedirs(themes_dir, exist_ok=True)
+
+    theme_stocks = {
+        "AI": ["NVIDIA", "Alphabet", "Microsoft", "Meta", "Tesla"],
+        "반도체": ["SK하이닉스", "삼성전자", "Sandisk", "NVIDIA", "AMD"],
+        "바이오": ["에이비엘바이오", "에이프릴바이오", "알테오젠", "삼성바이오로직스"],
+    }
+
+    for theme, keywords in theme_stocks.items():
+        theme_file = os.path.join(themes_dir, f"{theme}.md")
+
+        if os.path.exists(theme_file):
+            with open(theme_file, "r", encoding="utf-8") as f:
+                existing = f.read()
+        else:
+            existing = f"""# {theme} 테마
+
+## 관련 종목
+{chr(10).join([f'- [[stocks/{s}]]' for s in keywords])}
+
+## 트렌드 히스토리
+| 날짜 | 종목 동향 | 비고 |
+|------|----------|------|
+"""
+
+        if date not in existing:
+            # Check which theme stocks moved
+            moved = []
+            for news in per_etf_news:
+                for m in news.get("movers", []):
+                    if m["name"] in keywords:
+                        diff = m.get("diff", 0)
+                        moved.append(f"{m['name']}({'+' if diff > 0 else ''}{diff:.1f}%p)")
+
+            if moved:
+                new_entry = f"| {date} | {', '.join(moved[:3])} | {group_label} ETF |\n"
+
+                lines = existing.split("\n")
+                for i, line in enumerate(lines):
+                    if line.startswith("|---"):
+                        lines.insert(i + 1, new_entry.strip())
+                        break
+                existing = "\n".join(lines)
+
+                with open(theme_file, "w", encoding="utf-8") as f:
+                    f.write(existing)
+
+    return True
+
+
 def run(etf_keys=None, generate_images=True):
     """Returns (text_report, [image_paths])."""
     if etf_keys is None:
@@ -1566,6 +1758,12 @@ def run(etf_keys=None, generate_images=True):
     # Build analysis summary for Telegram
     analysis_summary = build_analysis_summary(group_label, date,
                                                per_etf_changes, per_etf_news)
+
+    # Save to Obsidian knowledge base for RON's learning
+    try:
+        save_to_obsidian(group_label, date, per_etf_changes, per_etf_news, analysis_summary)
+    except Exception as e:
+        print(f"Warning: Failed to save to Obsidian: {e}")
 
     return report, image_paths, analysis_summary
 
