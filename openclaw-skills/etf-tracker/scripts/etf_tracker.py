@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-TIMEFOLIO ETF Holdings Tracker v2
-- Telegram-optimized formatting (no tables)
-- Multi-period comparison (1일/1개월/3개월 via AJAX API)
-- 증감 TOP 5 (increase/decrease)
-- News analysis prompts for significant movers
+TIMEFOLIO ETF Holdings Tracker v3
+- 해외/국내 3종씩 분리
+- 1주일 / 1개월 증감 TOP 5 (증가+감소)
+- 각 TOP 5 종목별 뉴스 검색 키워드 + 운용역 추론
+- 3개월 비교는 엑셀 전용 (리포트에서 제외)
 """
 
 import urllib.request
@@ -17,12 +17,12 @@ from datetime import datetime, timedelta
 
 # ─── ETF Configuration ───────────────────────────────────────────────
 ETFS = {
-    "NQ100":         {"idx": 2,  "name": "미국나스닥100액티브",     "flag": "\U0001f1fa\U0001f1f8", "cate": "001"},
-    "CN_AI":         {"idx": 19, "name": "차이나AI테크액티브",     "flag": "\U0001f1e8\U0001f1f3", "cate": "001"},
-    "GLOBAL_AI":     {"idx": 6,  "name": "글로벌AI인공지능액티브", "flag": "\U0001f916", "cate": "001"},
-    "KOSPI_ACTIVE":  {"idx": 11, "name": "코스피액티브",           "flag": "\U0001f1f0\U0001f1f7", "cate": "001"},
-    "K_CULTURE":     {"idx": 1,  "name": "K컬처액티브",           "flag": "\U0001f3ac", "cate": "001"},
-    "K_BIO":         {"idx": 13, "name": "K바이오액티브",          "flag": "\U0001f9ec", "cate": "001"},
+    "NQ100":         {"idx": 2,  "name": "미국나스닥100액티브",     "flag": "🇺🇸", "cate": "001"},
+    "CN_AI":         {"idx": 19, "name": "차이나AI테크액티브",     "flag": "🇨🇳", "cate": "001"},
+    "GLOBAL_AI":     {"idx": 6,  "name": "글로벌AI인공지능액티브", "flag": "🤖", "cate": "001"},
+    "KOSPI_ACTIVE":  {"idx": 11, "name": "코스피액티브",           "flag": "🇰🇷", "cate": "001"},
+    "K_CULTURE":     {"idx": 1,  "name": "K컬처액티브",           "flag": "🎬", "cate": "001"},
+    "K_BIO":         {"idx": 13, "name": "K바이오액티브",          "flag": "🧬", "cate": "001"},
 }
 
 OVERSEAS_KEYS = ["NQ100", "CN_AI", "GLOBAL_AI"]
@@ -110,7 +110,6 @@ def save_data(etf_key, date, holdings):
 
 
 def load_data(etf_key, date_str):
-    """Load data for a specific date."""
     fp = os.path.join(DATA_DIR, f"{etf_key}_{date_str}.json")
     if os.path.exists(fp):
         with open(fp, "r", encoding="utf-8") as f:
@@ -118,172 +117,173 @@ def load_data(etf_key, date_str):
     return None
 
 
-def load_prev(etf_key, current_date):
-    """Load most recent previous data."""
+def load_nearest(etf_key, target_date, direction="before", max_days=10):
+    """Load data nearest to target_date.
+    direction='before': look for dates before target_date
+    """
     ensure_dir()
-    target = f"{etf_key}_{current_date}.json"
     files = sorted([
         f for f in os.listdir(DATA_DIR)
-        if f.startswith(f"{etf_key}_") and f.endswith(".json") and f != target
-    ], reverse=True)
-    if files:
-        with open(os.path.join(DATA_DIR, files[0]), "r", encoding="utf-8") as f:
-            return json.load(f)
-    return None
+        if f.startswith(f"{etf_key}_") and f.endswith(".json")
+    ])
+    if not files:
+        return None
+
+    candidates = []
+    for fn in files:
+        # Extract date from filename: ETFKEY_YYYY-MM-DD.json
+        parts = fn.replace(".json", "").split("_", 1)
+        if len(parts) < 2:
+            continue
+        file_date = parts[1]
+        if direction == "before" and file_date < target_date:
+            candidates.append((file_date, fn))
+
+    if not candidates:
+        return None
+
+    # Get closest to target
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    best_date, best_fn = candidates[0]
+
+    # Check if within max_days
+    try:
+        td = datetime.strptime(target_date, "%Y-%m-%d")
+        bd = datetime.strptime(best_date, "%Y-%m-%d")
+        if (td - bd).days > max_days:
+            return None
+    except ValueError:
+        pass
+
+    with open(os.path.join(DATA_DIR, best_fn), "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
-# ─── Comparison ───────────────────────────────────────────────────────
-def build_diff(today_list, prev_list):
-    """Compare two holdings lists, return sorted changes."""
-    if not prev_list:
-        return []
-    prev_map = {h["name"]: h["weight"] for h in prev_list}
-    today_map = {h["name"]: h["weight"] for h in today_list}
-    changes = []
-
-    for name, w in today_map.items():
-        pw = prev_map.get(name, 0)
-        diff = round(w - pw, 2)
-        if abs(diff) >= 0.1:
-            changes.append({"name": name, "weight": w, "prev": pw, "diff": diff,
-                            "new": name not in prev_map})
-
-    for name, pw in prev_map.items():
-        if name not in today_map and pw >= 0.3:
-            changes.append({"name": name, "weight": 0, "prev": pw,
-                            "diff": round(-pw, 2), "removed": True})
-
-    changes.sort(key=lambda x: x["diff"], reverse=True)
-    return changes
+def load_weekly(etf_key, current_date):
+    """Load data from ~7 days ago for weekly comparison."""
+    try:
+        target = datetime.strptime(current_date, "%Y-%m-%d") - timedelta(days=7)
+        target_str = target.strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+    return load_nearest(etf_key, current_date, direction="before", max_days=10)
 
 
-# ─── Formatting (Telegram-optimized) ─────────────────────────────────
-def fmt_change(diff, new=False, removed=False):
-    if new:
-        return "NEW"
-    if removed:
-        return "OUT"
-    sign = "+" if diff > 0 else ""
-    return f"{sign}{diff:.2f}%p"
+# ─── Comparison helpers ──────────────────────────────────────────────
+def parse_ajax_changes(ajax_data):
+    """Parse AJAX response into ups/downs/news lists."""
+    if not ajax_data or "today" not in ajax_data:
+        return [], [], []
 
-
-def fmt_etf_block(etf_key, holdings, m1_data, m3_data, daily_changes, date):
-    """Format a single ETF block for Telegram."""
-    cfg = ETFS[etf_key]
-    flag = cfg["flag"]
-    name = cfg["name"]
-    lines = []
-
-    lines.append(f"{flag} TIME {name}")
-    lines.append(f"   {len(holdings)}종목 | 기준일 {date}")
-    lines.append("")
-
-    # ── 1개월 비교: 증감 TOP 5 ──
-    if m1_data and "today" in m1_data:
-        today_items = m1_data["today"]
-        # Separate increases, decreases, new
-        ups = []
-        downs = []
-        news = []
-        for item in today_items:
-            nm = item["prodNm"]
-            w = float(item["wei"])
-            inc = item.get("increaseWei", "0")
-            if inc == "\uc2e0\uaddc" or inc == "신규":
-                news.append({"name": nm, "weight": w})
-            else:
-                try:
-                    val = float(inc)
-                    if val > 0:
-                        ups.append({"name": nm, "weight": w, "diff": val})
-                    elif val < 0:
-                        downs.append({"name": nm, "weight": w, "diff": val})
-                except ValueError:
-                    pass
-
-        ups.sort(key=lambda x: x["diff"], reverse=True)
-        downs.sort(key=lambda x: x["diff"])
-
-        if ups:
-            lines.append("\u2191 \ube44\uc911 \uc99d\uac00 TOP 5 (1\uac1c\uc6d4)")
-            for i, item in enumerate(ups[:5], 1):
-                bar = "\u2588" * min(int(item["diff"] * 2), 10)
-                lines.append(f"  {i}. {item['name']}")
-                lines.append(f"     {item['weight']:.2f}%  +{item['diff']:.2f}%p {bar}")
-            lines.append("")
-
-        if downs:
-            lines.append("\u2193 \ube44\uc911 \uac10\uc18c TOP 5 (1\uac1c\uc6d4)")
-            for i, item in enumerate(downs[:5], 1):
-                bar = "\u2591" * min(int(abs(item["diff"]) * 2), 10)
-                lines.append(f"  {i}. {item['name']}")
-                lines.append(f"     {item['weight']:.2f}%  {item['diff']:.2f}%p {bar}")
-            lines.append("")
-
-        if news:
-            names = ", ".join(f"{n['name']}({n['weight']:.1f}%)" for n in news)
-            lines.append(f"\u2b50 \uc2e0\uaddc \ud3b8\uc785: {names}")
-            lines.append("")
-
-    # ── 3개월 비교 요약 ──
-    if m3_data and "today" in m3_data:
-        items3 = m3_data["today"]
-        ups3 = []
-        downs3 = []
-        for item in items3:
-            inc = item.get("increaseWei", "0")
-            if inc == "\uc2e0\uaddc" or inc == "신규":
-                continue
+    ups, downs, news = [], [], []
+    for item in ajax_data["today"]:
+        nm = item["prodNm"]
+        w = float(item["wei"])
+        inc = item.get("increaseWei", "0")
+        if inc in ("신규", "\uc2e0\uaddc"):
+            news.append({"name": nm, "weight": w})
+        else:
             try:
                 val = float(inc)
                 if val > 0:
-                    ups3.append({"name": item["prodNm"], "diff": val})
+                    ups.append({"name": nm, "weight": w, "diff": val})
                 elif val < 0:
-                    downs3.append({"name": item["prodNm"], "diff": val})
+                    downs.append({"name": nm, "weight": w, "diff": val})
             except ValueError:
                 pass
-        ups3.sort(key=lambda x: x["diff"], reverse=True)
-        downs3.sort(key=lambda x: x["diff"])
 
-        parts = []
-        if ups3:
-            top = ups3[0]
-            parts.append(f"\u2191 {top['name']} +{top['diff']:.1f}%p")
-        if downs3:
-            bot = downs3[0]
-            parts.append(f"\u2193 {bot['name']} {bot['diff']:.1f}%p")
-        if parts:
-            lines.append(f"\u23f3 3\uac1c\uc6d4 \ube44\uad50: {' | '.join(parts)}")
-            lines.append("")
+    ups.sort(key=lambda x: x["diff"], reverse=True)
+    downs.sort(key=lambda x: x["diff"])
+    return ups, downs, news
 
-    # ── 전일 비교 (from stored data) ──
-    if daily_changes:
-        big = [c for c in daily_changes if abs(c["diff"]) >= 0.5]
-        if big:
-            ups_d = [c for c in big if c["diff"] > 0][:3]
-            downs_d = [c for c in big if c["diff"] < 0]
-            downs_d.sort(key=lambda x: x["diff"])
-            downs_d = downs_d[:3]
 
-            d_parts = []
-            for c in ups_d:
-                tag = " NEW" if c.get("new") else ""
-                d_parts.append(f"\u2191{c['name']} +{c['diff']:.2f}%p{tag}")
-            for c in downs_d:
-                tag = " OUT" if c.get("removed") else ""
-                d_parts.append(f"\u2193{c['name']} {c['diff']:.2f}%p{tag}")
-            lines.append(f"\U0001f4c5 \uc804\uc77c\ub300\ube44: {', '.join(d_parts)}")
-            lines.append("")
+def build_stored_diff(today_list, prev_list):
+    """Compare two holdings lists from stored data."""
+    if not prev_list:
+        return [], [], []
+    prev_map = {h["name"]: h["weight"] for h in prev_list}
+    today_map = {h["name"]: h["weight"] for h in today_list}
+
+    ups, downs, news = [], [], []
+    for name, w in today_map.items():
+        pw = prev_map.get(name, 0)
+        diff = round(w - pw, 2)
+        if name not in prev_map and w >= 0.5:
+            news.append({"name": name, "weight": w})
+        elif diff >= 0.1:
+            ups.append({"name": name, "weight": w, "diff": diff})
+        elif diff <= -0.1:
+            downs.append({"name": name, "weight": w, "diff": diff})
+
+    ups.sort(key=lambda x: x["diff"], reverse=True)
+    downs.sort(key=lambda x: x["diff"])
+    return ups, downs, news
+
+
+# ─── Formatting ──────────────────────────────────────────────────────
+def fmt_top5_section(title, ups, downs, news_items, limit=5):
+    """Format a TOP 5 section with ups and downs."""
+    lines = []
+    lines.append(title)
+
+    if ups:
+        lines.append("  📈 비중 증가")
+        for i, item in enumerate(ups[:limit], 1):
+            lines.append(f"    {i}. {item['name']}")
+            lines.append(f"       {item['weight']:.2f}% (+{item['diff']:.2f}%p)")
+    else:
+        lines.append("  📈 비중 증가: 없음")
+
+    if downs:
+        lines.append("  📉 비중 감소")
+        for i, item in enumerate(downs[:limit], 1):
+            lines.append(f"    {i}. {item['name']}")
+            lines.append(f"       {item['weight']:.2f}% ({item['diff']:.2f}%p)")
+    else:
+        lines.append("  📉 비중 감소: 없음")
+
+    if news_items:
+        names = ", ".join(f"{n['name']}({n['weight']:.1f}%)" for n in news_items[:3])
+        lines.append(f"  ⭐ 신규: {names}")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def fmt_etf_block(etf_key, holdings, m1_data, weekly_data, date):
+    """Format a single ETF block."""
+    cfg = ETFS[etf_key]
+    lines = []
+
+    lines.append(f"{cfg['flag']} {cfg['name']}")
+    lines.append(f"  {len(holdings)}종목 | {date}")
+    lines.append("")
+
+    # 1주일 비교
+    if weekly_data:
+        w_ups, w_downs, w_news = build_stored_diff(
+            holdings, weekly_data.get("holdings", [])
+        )
+        week_label = f"📊 1주일 증감 TOP 5"
+        if weekly_data.get("date"):
+            week_label += f" (vs {weekly_data['date']})"
+        lines.append(fmt_top5_section(week_label, w_ups, w_downs, w_news))
+    else:
+        lines.append("📊 1주일 증감: 데이터 축적 중\n")
+
+    # 1개월 비교 (AJAX)
+    m1_ups, m1_downs, m1_news = parse_ajax_changes(m1_data)
+    lines.append(fmt_top5_section("📊 1개월 증감 TOP 5", m1_ups, m1_downs, m1_news))
 
     return "\n".join(lines)
 
 
 def build_news_section(all_movers):
-    """Build news analysis section for stocks with large changes."""
+    """Build news analysis section for TOP 5 stocks across all ETFs."""
     if not all_movers:
         return ""
 
-    # Deduplicate and sort by absolute diff
+    # Deduplicate by name, keep largest absolute diff
     seen = {}
     for m in all_movers:
         key = m["name"]
@@ -295,36 +295,33 @@ def build_news_section(all_movers):
         return ""
 
     lines = [
-        "",
-        "\u2500" * 28,
-        "\U0001f50d \ub274\uc2a4 \ubd84\uc11d \ub300\uc0c1 \uc885\ubaa9",
+        "─" * 28,
+        "🔍 주요 종목 뉴스 분석",
         "",
     ]
 
     for i, m in enumerate(top_movers, 1):
-        direction = "\u2191\ube44\uc911\uc99d\uac00" if m["diff"] > 0 else "\u2193\ube44\uc911\uac10\uc18c"
-        etf = m.get("etf_name", "")
         diff_str = f"+{m['diff']:.2f}" if m["diff"] > 0 else f"{m['diff']:.2f}"
+        direction = "↑" if m["diff"] > 0 else "↓"
+        etf = m.get("etf_name", "")
+
         lines.append(f"{i}. {m['name']} ({etf})")
-        lines.append(f"   {direction} {diff_str}%p | {m['weight']:.2f}%")
+        lines.append(f"   {direction} {diff_str}%p → 현재 {m['weight']:.2f}%")
 
-        # Generate search suggestion and speculation
-        if m["diff"] > 2:
-            lines.append(f"   \u27a1 \uac80\uc0c9: \"{m['name']} \uc2e4\uc801 \ud638\uc7ac \uc131\uc7a5\"")
-            lines.append(f"   \U0001f4ad \ucd94\uce21: \uc2e4\uc801 \uac1c\uc120 \ub610\ub294 \uc131\uc7a5 \uae30\ub300\uac10\uc73c\ub85c \uc6b4\uc6a9\uc5ed \ube44\uc911 \ud655\ub300")
+        # News keyword + speculation
+        if m["diff"] > 3:
+            lines.append(f"   📰 \"{m['name']} 실적 호재 편입 확대\"")
+            lines.append(f"   💭 대규모 비중 확대 → 실적 서프라이즈 or 구조적 성장 기대")
         elif m["diff"] > 0:
-            lines.append(f"   \u27a1 \uac80\uc0c9: \"{m['name']} \uc8fc\uac00 \uc0c1\uc2b9 \uc774\uc720\"")
-            lines.append(f"   \U0001f4ad \ucd94\uce21: \uc12c\ud130 \uc131\uc7a5 \ub610\ub294 \ubcf8\uc5c5 \uae30\ub300\uac10 \ubc18\uc601")
-        elif m["diff"] < -2:
-            lines.append(f"   \u27a1 \uac80\uc0c9: \"{m['name']} \uc545\uc7ac \ub9ac\uc2a4\ud06c \ub17c\ub780\"")
-            lines.append(f"   \U0001f4ad \ucd94\uce21: \uc2e4\uc801 \ubd80\uc9c4 \ub610\ub294 \ubc38\ub958\uc5d0\uc774\uc158 \ubd80\ub2f4\uc73c\ub85c \uc6b4\uc6a9\uc5ed \ube44\uc911 \ucd95\uc18c")
+            lines.append(f"   📰 \"{m['name']} 주가 상승 모멘텀\"")
+            lines.append(f"   💭 섹터 모멘텀 or 실적 기대감 반영한 비중 조정")
+        elif m["diff"] < -3:
+            lines.append(f"   📰 \"{m['name']} 악재 리스크 비중 축소\"")
+            lines.append(f"   💭 대규모 비중 축소 → 실적 부진 or 밸류에이션 부담")
         else:
-            lines.append(f"   \u27a1 \uac80\uc0c9: \"{m['name']} \uc8fc\uac00 \ud558\ub77d \uc774\uc720\"")
-            lines.append(f"   \U0001f4ad \ucd94\uce21: \ucc28\uc775\uc2e4\ud604 \ub610\ub294 \uc139\ud130 \ud68c\uc804 \uc804\ub7b5")
+            lines.append(f"   📰 \"{m['name']} 주가 하락 이슈\"")
+            lines.append(f"   💭 차익실현 or 섹터 로테이션 전략")
         lines.append("")
-
-    lines.append("\u203c \uc704 \uc885\ubaa9\ub4e4\uc758 \ucd5c\uadfc \ub274\uc2a4\ub97c \uac80\uc0c9\ud558\uc5ec")
-    lines.append("   \uc6b4\uc6a9\uc5ed\uc758 \ube44\uc911 \ubcc0\ub3d9 \uc0ac\uc720\ub97c \ubd84\uc11d\ud574\uc8fc\uc138\uc694.")
 
     return "\n".join(lines)
 
@@ -356,57 +353,47 @@ def run(etf_keys=None):
             # 2. Save today's data
             save_data(key, page_date, holdings)
 
-            # 3. Fetch AJAX comparisons (1M, 3M)
+            # 3. Fetch 1-month AJAX comparison
             m1 = fetch_period_comparison(cfg["idx"], "pdfM1")
-            m3 = fetch_period_comparison(cfg["idx"], "pdfM3")
 
-            # 4. Load previous day for daily comparison
-            prev = load_prev(key, page_date)
-            daily_changes = build_diff(holdings, prev["holdings"] if prev else None)
+            # 4. Load weekly data (from stored)
+            weekly = load_weekly(key, page_date)
 
             # 5. Format block
-            block = fmt_etf_block(key, holdings, m1, m3, daily_changes, page_date)
+            block = fmt_etf_block(key, holdings, m1, weekly, page_date)
             blocks.append(block)
 
-            # 6. Collect significant movers for news section
-            if m1 and "today" in m1:
-                for item in m1["today"]:
-                    inc = item.get("increaseWei", "0")
-                    if inc in ("신규", "\uc2e0\uaddc"):
-                        val = float(item["wei"])
-                    else:
-                        try:
-                            val = float(inc)
-                        except ValueError:
-                            continue
-                    if abs(val) >= 2.0:
-                        all_movers.append({
-                            "name": item["prodNm"],
-                            "weight": float(item["wei"]),
-                            "diff": val if inc not in ("신규", "\uc2e0\uaddc") else float(item["wei"]),
-                            "etf_name": cfg["name"],
-                        })
+            # 6. Collect movers for news section (from 1M data)
+            m1_ups, m1_downs, m1_news = parse_ajax_changes(m1)
+            for item in m1_ups[:5]:
+                all_movers.append({**item, "etf_name": cfg["name"]})
+            for item in m1_downs[:5]:
+                all_movers.append({**item, "etf_name": cfg["name"]})
+            for item in m1_news:
+                all_movers.append({
+                    "name": item["name"], "weight": item["weight"],
+                    "diff": item["weight"], "etf_name": cfg["name"],
+                })
 
         except Exception as e:
             errors.append(f"{key}: {e}")
 
-    # Build final report
     # Determine group label
     keys_set = set(etf_keys)
     if keys_set <= set(OVERSEAS_KEYS):
-        group = "\U0001f30f \ud574\uc678"
+        group = "🌏 해외"
     elif keys_set <= set(DOMESTIC_KEYS):
-        group = "\U0001f1f0\U0001f1f7 \uad6d\ub0b4"
+        group = "🇰🇷 국내"
     else:
-        group = "\uc804\uccb4"
+        group = "전체"
 
     header = (
-        f"\U0001f4ca TIMEFOLIO {group} ETF \ub9ac\ud3ec\ud2b8\n"
-        f"\U0001f4c5 {date or 'unknown'}\n"
+        f"📊 TIMEFOLIO {group} ETF 리포트\n"
+        f"📅 {date or 'unknown'}\n"
         f"{'=' * 28}"
     )
 
-    separator = "\n" + "\u2500" * 28 + "\n"
+    separator = "\n" + "─" * 28 + "\n"
     body = separator.join(blocks)
 
     news = build_news_section(all_movers)
@@ -415,14 +402,13 @@ def run(etf_keys=None):
     if news:
         report += f"\n{news}"
     if errors:
-        report += "\n\n\u26a0 Errors: " + ", ".join(errors)
+        report += "\n\n⚠ Errors: " + ", ".join(errors)
 
     return report
 
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    # Support group shortcuts
     if args == ["overseas"] or args == ["해외"]:
         args = OVERSEAS_KEYS
     elif args == ["domestic"] or args == ["국내"]:
