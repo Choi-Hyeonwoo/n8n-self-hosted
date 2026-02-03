@@ -4,7 +4,7 @@ ETF Tracker 스케줄러
 systemd/cron 없이 백그라운드에서 스케줄 실행
 
 스케줄:
-- 국내: 월~금 16:00 KST
+- 국내: 월~금 17:00 KST (장 마감 후 데이터 업데이트 대기)
 - 해외: 화~토 08:00 KST
 
 실행:
@@ -37,8 +37,8 @@ def log(msg):
 
 
 def should_run_domestic(now):
-    """국내: 월(0)~금(4) 16:00"""
-    return now.weekday() <= 4 and now.hour == 16 and now.minute == 0
+    """국내: 월(0)~금(4) 17:00"""
+    return now.weekday() <= 4 and now.hour == 17 and now.minute == 0
 
 
 def should_run_overseas(now):
@@ -62,7 +62,7 @@ def main():
     log("  ETF Tracker Scheduler Started")
     log("═══════════════════════════════════════")
     log("Schedule:")
-    log("  - Domestic: Mon-Fri 16:00 KST")
+    log("  - Domestic: Mon-Fri 17:00 KST")
     log("  - Overseas: Tue-Sat 08:00 KST")
     log("")
 
