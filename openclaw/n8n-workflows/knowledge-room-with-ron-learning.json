@@ -1,0 +1,330 @@
+{
+  "name": "Telegram 지식사랑방 → Google Drive → RON 학습",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "410cfae7-7c0d-4b1d-984a-8cbe61fd736f",
+        "options": {}
+      },
+      "id": "cef348d9-5c25-4f48-ad18-0ac09486066f",
+      "name": "Webhook1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-2928, -32],
+      "webhookId": "410cfae7-7c0d-4b1d-984a-8cbe61fd736f"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+          "conditions": [{"id": "filter-thread", "leftValue": "={{ $json.body.message.message_thread_id }}", "rightValue": "", "operator": {"type": "any", "operation": "exists"}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "124b4a97-6dee-4083-884e-6ea1fcbfdc2a",
+      "name": "토픽 메시지만 필터",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-2720, -32]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+          "conditions": [{"id": "filter-not-general", "leftValue": "={{ $json.body.message.reply_to_message?.forum_topic_created }}", "rightValue": "", "operator": {"type": "any", "operation": "exists"}}],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "4dfa2ff6-0d01-4757-8d16-eadacc20578b",
+      "name": "General 제외",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-2528, -32]
+    },
+    {
+      "parameters": {
+        "jsCode": "// thread_id → folder_id 매핑\nconst FOLDER_MAP = {\n  '2': '1ElawYn7WHWjOKZwJMPE_u2Weqp1_988G',\n  '4': '1vT_EhvjFuZ1QhyMWSr3gp-pdHZ_9dBXR',\n  '14': '163idlblhh3YdKCjFIeGKj3kxe5et3VRZ',\n  '81': '1DKaevA7QlMloqyfrAk2ENqgVbqwyG73G',\n  '83': '1ydV3NnqRgc7IVrv8BnnMS4czrKMMlzs8',\n  '136': '1rVdWfZZIehJ2hMmW7oVxtiz9afp2JrbP',\n  '147': '1UWimpISHlS3O-vPu7PLaTPpfOVCbF6oh',\n  '170': '1XAmNFJiHD1rYLCwrc_pVcA7oCfA5O0qr',\n  '171': '11VKbtM20uYh3eHQqMgNDDnd7j3_zCv74',\n  '179': '10AqsptixxTJ8MQ5wPcYmPSXMsAQsSYht',\n  '520': '1hCotZ_yQVSXu8LhSG2_a-BXU1nvoCNFo',\n  '619': '1lK9cx_VafSiYGU5nRl4_lYQrSK5-plC3',\n  '4681': '15cGUb5hwoMRJeqB_pAUxjFRY7cw0Q6q-',\n  '11370': '1WnVoWCTCk1JxT8KTAGERkgWiugg_Q1Lk',\n  '19852': '1AaLxyWt6S_Fv76AbPdfP_RdzxvNtEN7B'\n};\n\nconst TOPIC_NAMES = {\n  '2': '일반토론',\n  '4': 'AI기술',\n  '14': '투자전략',\n  '81': '개발노트',\n  '83': '독서노트',\n  '136': '시장분석',\n  '147': '아이디어',\n  '170': '프로젝트',\n  '171': '학습자료',\n  '179': '인사이트',\n  '520': '뉴스공유',\n  '619': '질문답변',\n  '4681': '리서치',\n  '11370': '회고록',\n  '19852': '기타'\n};\n\nconst message = $input.item.json.body.message;\nconst threadId = String(message.message_thread_id);\nconst folderId = FOLDER_MAP[threadId] || '1Gj8TWro11WEC4dsc53G8is7JUE4hvLpn';\nconst topicName = TOPIC_NAMES[threadId] || '미분류';\n\nconst date = new Date(message.date * 1000);\nconst timestamp = date.toISOString().slice(0,19).replace(/T/g, '_').replace(/:/g, '-');\nconst textContent = message.text || message.caption || '';\n\nconst hasText = !!(message.text || message.caption);\nconst hasPhoto = !!message.photo;\nconst hasDocument = !!message.document;\nconst hasVideo = !!message.video;\n\nreturn {\n  ...($input.item.json),\n  targetFolderId: folderId,\n  topicName: topicName,\n  timestamp: timestamp,\n  threadId: threadId,\n  textContent: textContent,\n  hasText: hasText,\n  hasPhoto: hasPhoto,\n  hasDocument: hasDocument,\n  hasVideo: hasVideo\n};"
+      },
+      "id": "5f5b8215-a20d-4b74-bf59-9a3c8d9038a3",
+      "name": "토픽→폴더 매핑",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-2320, -32]
+    },
+    {
+      "parameters": {
+        "modelId": {"__rl": true, "value": "gpt-4o-mini", "mode": "list", "cachedResultName": "GPT-4O-MINI"},
+        "messages": {
+          "values": [
+            {"content": "You are a helpful assistant that creates very short Korean titles for content. Create a title that is:\n- Maximum 15 characters in Korean\n- No special characters (only Korean, English, numbers, underscore)\n- No spaces (use underscore instead)\n- Captures the main topic\n- If the content is empty or just a URL, create a title based on the URL domain or say '링크공유'\n- Only output the title, nothing else", "role": "system"},
+            {"content": "=Create a short Korean title for this content:\n\n{{ $json.textContent || '이미지_공유' }}"}
+          ]
+        },
+        "options": {"maxTokens": 50, "temperature": 0.3}
+      },
+      "id": "41efa16a-7ff2-46f8-950c-f7ea19ef44b5",
+      "name": "GPT 주제 요약",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [-2128, -32],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "const prevData = $('토픽→폴더 매핑').item.json;\nlet topic = $input.item.json.message?.content || 'untitled';\ntopic = topic.replace(/[\\\\/:*?\"<>|\\s\\n\\r]/g, '_').replace(/_+/g, '_').slice(0, 15);\nconst filePrefix = `${prevData.timestamp}_${prevData.threadId}_${topic}`;\n\nreturn {\n  ...prevData,\n  topic: topic,\n  filePrefix: filePrefix\n};"
+      },
+      "id": "8b351ae6-ab17-401d-a646-506678abe794",
+      "name": "파일명 prefix 생성",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1792, -32]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+          "conditions": [{"id": "has-text", "leftValue": "={{ $json.hasText }}", "rightValue": true, "operator": {"type": "boolean", "operation": "equals"}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0c88aef2-6e98-498f-9a31-7aef2434b9b0",
+      "name": "텍스트 있음?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-1600, -304]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+          "conditions": [{"id": "has-photo", "leftValue": "={{ $json.hasPhoto }}", "rightValue": true, "operator": {"type": "boolean", "operation": "equals"}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5bff2a14-8a1b-47a3-a845-93703ae96e24",
+      "name": "사진 있음?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-1600, -32]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+          "conditions": [{"id": "has-document", "leftValue": "={{ $json.hasDocument }}", "rightValue": true, "operator": {"type": "boolean", "operation": "equals"}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0aa95bc7-7605-4560-b347-87d47e8f1e52",
+      "name": "문서 있음?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-1600, 256]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose"},
+          "conditions": [{"id": "has-video", "leftValue": "={{ $json.hasVideo }}", "rightValue": true, "operator": {"type": "boolean", "operation": "equals"}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e857cce8-1958-4563-96a0-49a003e98f54",
+      "name": "동영상 있음?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-1600, 528]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prevData = $('파일명 prefix 생성').item.json;\nconst text = prevData.textContent || 'no content';\nconst fileName = `${prevData.filePrefix}.md`;\nconst base64Content = Buffer.from(text, 'utf-8').toString('base64');\n\nreturn {\n  json: {\n    ...prevData,\n    fileName: fileName\n  },\n  binary: {\n    data: {\n      data: base64Content,\n      mimeType: 'text/markdown',\n      fileName: fileName\n    }\n  }\n};"
+      },
+      "id": "357a9fd3-156a-4195-bccb-bdb5ca4cfbcb",
+      "name": "텍스트→MD 변환",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1392, -368]
+    },
+    {
+      "parameters": {
+        "name": "={{ $json.fileName }}",
+        "driveId": {"__rl": true, "mode": "list", "value": "My Drive"},
+        "folderId": {"__rl": true, "value": "={{ $json.targetFolderId }}", "mode": "id"},
+        "options": {}
+      },
+      "id": "2be3351b-25f2-4333-8f8d-902fc8ebb2f5",
+      "name": "Drive 텍스트 업로드",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [-1200, -368],
+      "credentials": {"googleDriveOAuth2Api": {"id": "br5pnMr0ZdYx9LuJ", "name": "Google Drive account 2"}}
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $('파일명 prefix 생성').item.json.body.message.photo.slice(-1)[0].file_id }}",
+        "additionalFields": {},
+        "path": "237e2bfb-03cb-4cc5-886d-2def903eb8cb"
+      },
+      "id": "ffdfa5fa-a0f9-443b-ad96-c79a6e903238",
+      "name": "Telegram 사진 다운로드",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [-1392, -96],
+      "webhookId": "237e2bfb-03cb-4cc5-886d-2def903eb8cb",
+      "credentials": {"telegramApi": {"id": "XjHCAqxQGRkHAEk4", "name": "Telegram 지식사랑방"}}
+    },
+    {
+      "parameters": {
+        "name": "={{ $('파일명 prefix 생성').item.json.filePrefix }}_photo.jpg",
+        "driveId": {"__rl": true, "mode": "list", "value": "My Drive"},
+        "folderId": {"__rl": true, "value": "={{ $('파일명 prefix 생성').item.json.targetFolderId }}", "mode": "id"},
+        "options": {}
+      },
+      "id": "9f89f551-755c-43ff-aada-28882623ddea",
+      "name": "Drive 사진 업로드",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [-1200, -96],
+      "credentials": {"googleDriveOAuth2Api": {"id": "br5pnMr0ZdYx9LuJ", "name": "Google Drive account 2"}}
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $('파일명 prefix 생성').item.json.body.message.document.file_id }}",
+        "additionalFields": {},
+        "path": "84a6e28e-6f69-4956-bb19-2384155debeb"
+      },
+      "id": "ab729489-3baf-438d-922e-cbe3acd58a51",
+      "name": "Telegram 문서 다운로드",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [-1392, 192],
+      "webhookId": "84a6e28e-6f69-4956-bb19-2384155debeb",
+      "credentials": {"telegramApi": {"id": "XjHCAqxQGRkHAEk4", "name": "Telegram 지식사랑방"}}
+    },
+    {
+      "parameters": {
+        "name": "={{ $('파일명 prefix 생성').item.json.filePrefix }}_{{ $('파일명 prefix 생성').item.json.body.message.document.file_name }}",
+        "driveId": {"__rl": true, "mode": "list", "value": "My Drive"},
+        "folderId": {"__rl": true, "value": "={{ $('파일명 prefix 생성').item.json.targetFolderId }}", "mode": "id"},
+        "options": {}
+      },
+      "id": "b7502843-8955-4602-9576-437f3e6a8d08",
+      "name": "Drive 문서 업로드",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [-1200, 192],
+      "credentials": {"googleDriveOAuth2Api": {"id": "br5pnMr0ZdYx9LuJ", "name": "Google Drive account 2"}}
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $('파일명 prefix 생성').item.json.body.message.video.file_id }}",
+        "additionalFields": {},
+        "path": "c22fa09a-3a96-42fc-a690-13d2bef8f1c0"
+      },
+      "id": "bfe16c3d-1487-4f54-8fed-185a74cd2594",
+      "name": "Telegram 동영상 다운로드",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [-1392, 464],
+      "webhookId": "c22fa09a-3a96-42fc-a690-13d2bef8f1c0",
+      "credentials": {"telegramApi": {"id": "XjHCAqxQGRkHAEk4", "name": "Telegram 지식사랑방"}}
+    },
+    {
+      "parameters": {
+        "name": "={{ $('파일명 prefix 생성').item.json.filePrefix }}_video.mp4",
+        "driveId": {"__rl": true, "mode": "list", "value": "My Drive"},
+        "folderId": {"__rl": true, "value": "={{ $('파일명 prefix 생성').item.json.targetFolderId }}", "mode": "id"},
+        "options": {}
+      },
+      "id": "5d61112d-e284-4301-a489-e9d0327c7526",
+      "name": "Drive 동영상 업로드",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [-1200, 464],
+      "credentials": {"googleDriveOAuth2Api": {"id": "br5pnMr0ZdYx9LuJ", "name": "Google Drive account 2"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "// RON 학습을 위한 데이터 생성\nconst prefixData = $('파일명 prefix 생성').item.json;\n\n// 업로드된 파일 정보 수집\nlet uploadedFiles = [];\n\ntry {\n  const textResult = $('Drive 텍스트 업로드').first();\n  if (textResult) uploadedFiles.push({type: 'text', id: textResult.json.id, name: textResult.json.name});\n} catch(e) {}\n\ntry {\n  const photoResult = $('Drive 사진 업로드').first();\n  if (photoResult) uploadedFiles.push({type: 'photo', id: photoResult.json.id, name: photoResult.json.name});\n} catch(e) {}\n\ntry {\n  const docResult = $('Drive 문서 업로드').first();\n  if (docResult) uploadedFiles.push({type: 'document', id: docResult.json.id, name: docResult.json.name});\n} catch(e) {}\n\ntry {\n  const videoResult = $('Drive 동영상 업로드').first();\n  if (videoResult) uploadedFiles.push({type: 'video', id: videoResult.json.id, name: videoResult.json.name});\n} catch(e) {}\n\nreturn {\n  json: {\n    action: 'learn',\n    source: '지식사랑방',\n    topic: prefixData.topicName,\n    threadId: prefixData.threadId,\n    folderId: prefixData.targetFolderId,\n    timestamp: prefixData.timestamp,\n    content: prefixData.textContent.substring(0, 500),\n    files: uploadedFiles,\n    title: prefixData.topic\n  }\n};"
+      },
+      "id": "ron-learning-data",
+      "name": "RON 학습 데이터 생성",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-900, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.17.0.1:8768/learn",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 5000,
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "ron-learning-trigger",
+      "name": "RON 학습 트리거",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-700, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8423138757:AAGiCfdo5Mwhn68sURNB--e9W-LsrM_WFCU/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: '492860021', text: '📚 지식사랑방 → RON 학습 완료\\n\\n토픽: ' + $('RON 학습 데이터 생성').item.json.topic + '\\n제목: ' + $('RON 학습 데이터 생성').item.json.title + '\\n파일수: ' + $('RON 학습 데이터 생성').item.json.files.length + '개', parse_mode: 'HTML' }) }}"
+      },
+      "id": "telegram-notify",
+      "name": "학습 완료 알림",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-500, 100]
+    }
+  ],
+  "connections": {
+    "Webhook1": {"main": [[{"node": "토픽 메시지만 필터", "type": "main", "index": 0}]]},
+    "토픽 메시지만 필터": {"main": [[{"node": "General 제외", "type": "main", "index": 0}]]},
+    "General 제외": {"main": [[{"node": "토픽→폴더 매핑", "type": "main", "index": 0}]]},
+    "토픽→폴더 매핑": {"main": [[{"node": "GPT 주제 요약", "type": "main", "index": 0}]]},
+    "GPT 주제 요약": {"main": [[{"node": "파일명 prefix 생성", "type": "main", "index": 0}]]},
+    "파일명 prefix 생성": {"main": [[{"node": "텍스트 있음?", "type": "main", "index": 0}, {"node": "사진 있음?", "type": "main", "index": 0}, {"node": "문서 있음?", "type": "main", "index": 0}, {"node": "동영상 있음?", "type": "main", "index": 0}]]},
+    "텍스트 있음?": {"main": [[{"node": "텍스트→MD 변환", "type": "main", "index": 0}]]},
+    "텍스트→MD 변환": {"main": [[{"node": "Drive 텍스트 업로드", "type": "main", "index": 0}]]},
+    "사진 있음?": {"main": [[{"node": "Telegram 사진 다운로드", "type": "main", "index": 0}]]},
+    "Telegram 사진 다운로드": {"main": [[{"node": "Drive 사진 업로드", "type": "main", "index": 0}]]},
+    "문서 있음?": {"main": [[{"node": "Telegram 문서 다운로드", "type": "main", "index": 0}]]},
+    "Telegram 문서 다운로드": {"main": [[{"node": "Drive 문서 업로드", "type": "main", "index": 0}]]},
+    "동영상 있음?": {"main": [[{"node": "Telegram 동영상 다운로드", "type": "main", "index": 0}]]},
+    "Telegram 동영상 다운로드": {"main": [[{"node": "Drive 동영상 업로드", "type": "main", "index": 0}]]},
+    "Drive 텍스트 업로드": {"main": [[{"node": "RON 학습 데이터 생성", "type": "main", "index": 0}]]},
+    "Drive 사진 업로드": {"main": [[{"node": "RON 학습 데이터 생성", "type": "main", "index": 0}]]},
+    "Drive 문서 업로드": {"main": [[{"node": "RON 학습 데이터 생성", "type": "main", "index": 0}]]},
+    "Drive 동영상 업로드": {"main": [[{"node": "RON 학습 데이터 생성", "type": "main", "index": 0}]]},
+    "RON 학습 데이터 생성": {"main": [[{"node": "RON 학습 트리거", "type": "main", "index": 0}]]},
+    "RON 학습 트리거": {"main": [[{"node": "학습 완료 알림", "type": "main", "index": 0}]]}
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Seoul"
+  },
+  "tags": [
+    {"name": "openclaw"},
+    {"name": "knowledge"},
+    {"name": "ron-learning"}
+  ]
+}
