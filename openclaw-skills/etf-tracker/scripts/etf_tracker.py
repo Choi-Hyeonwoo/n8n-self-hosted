@@ -1416,7 +1416,9 @@ def save_to_obsidian(group_label, date, per_etf_changes, per_etf_news, analysis_
         etf_name = news["etf_name"]
         for m in news.get("movers", []):
             stock_name = m["name"]
-            stock_file = os.path.join(stocks_dir, f"{stock_name}.md")
+            # Sanitize filename (remove invalid characters)
+            safe_name = stock_name.replace("/", "_").replace("\\", "_").replace(":", "_")
+            stock_file = os.path.join(stocks_dir, f"{safe_name}.md")
 
             # Get existing content or create new
             if os.path.exists(stock_file):
