@@ -58,16 +58,20 @@ def fetch_page(idx, cate="001"):
         return resp.read().decode("utf-8")
 
 
-def fetch_period_comparison(idx, period):
+def fetch_period_comparison(idx, period, retries=3):
+    import time
     data = urllib.parse.urlencode({"period": period, "idx": idx}).encode()
-    req = urllib.request.Request(AJAX_URL, data=data, headers={
-        "User-Agent": "Mozilla/5.0 (compatible; OpenClaw/1.0)"
-    })
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except Exception:
-        return None
+    for attempt in range(retries):
+        req = urllib.request.Request(AJAX_URL, data=data, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; OpenClaw/1.0)"
+        })
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception:
+            if attempt < retries - 1:
+                time.sleep(1 + attempt)
+    return None
 
 
 # ─── Parsing ──────────────────────────────────────────────────────────
@@ -274,144 +278,121 @@ def _draw_table_rows(ax, rows, col_defs, y_start, row_h, fonts, fig_w):
                     ha=align, va="center", color=color, zorder=3)
 
 
-# ─── Page 1: 비중 변동 TOP 5 + BOTTOM 3 ─────────────────────────────
-def render_page_changes(group_label, date, ups, downs, new_items):
-    if not HAS_MPL:
+# ─── Page 1: 비중 변동 — ETF별 가로 3열 ───────────────────────────────
+def render_page_changes(group_label, date, per_etf_changes):
+    """per_etf_changes: list of {short, name, ups: [{name,weight,diff,ticker}], downs: [...]}"""
+    if not HAS_MPL or not per_etf_changes:
         return None
     fonts = _get_fonts()
     font, font_title, font_section, font_header, font_small, _ = fonts
 
-    n_ups = min(len(ups), 5)
-    n_downs = min(len(downs), 3)
-    n_new = min(len(new_items), 3) if new_items else 0
-    row_h = 0.38
-    sect_h = 0.48
-    has_new = n_new > 0
+    n_etfs = len(per_etf_changes)
+    col_w = 4.2
+    gap = 0.15
+    fig_w = 0.3 + n_etfs * col_w + (n_etfs - 1) * gap + 0.3
 
-    fig_h = (0.75 + sect_h + n_ups * row_h + 0.15
-             + sect_h + n_downs * row_h + 0.15)
-    if has_new:
-        fig_h += sect_h + n_new * row_h + 0.1
-    fig_h += 0.2
-    fig_w = 12.5
+    row_h = 0.34
+    sect_h = 0.40
+    etf_head_h = 0.36
+    col_head_h = 0.28
+    n_ups = 5
+    n_downs = 3
 
+    fig_h = (0.7 + sect_h + etf_head_h + col_head_h + n_ups * row_h + 0.2
+             + sect_h + etf_head_h + col_head_h + n_downs * row_h + 0.3)
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
     ax.set_xlim(0, fig_w)
     ax.set_ylim(0, fig_h)
     ax.axis("off")
     fig.patch.set_facecolor("white")
 
-    col = {"rank": 0.4, "ticker": 1.6, "name": 3.8, "etf": 6.3, "weight": 8.0, "diff": 10.0, "new_tag": 11.5}
+    col_starts = [0.3 + i * (col_w + gap) for i in range(n_etfs)]
+    # relative column positions within each ETF column
+    rx = {"rank": 0.15, "ticker": 0.65, "name": 1.85, "weight": 3.05, "diff": 3.75}
 
     # Title
-    y = fig_h - 0.45
+    y = fig_h - 0.4
     ax.text(fig_w / 2, y, f"TIMEFOLIO {group_label} ETF  비중 변동",
             fontproperties=font_title, ha="center", va="center", color="#1A1A2E")
     ax.text(fig_w - 0.3, y, date, fontproperties=font_small,
             ha="right", va="center", color="#888888")
 
-    # ─ UP section ─
-    y -= 0.55
-    ax.add_patch(plt.Rectangle((0.15, y - 0.17), fig_w - 0.3, 0.38,
-                                facecolor="#C62828", edgecolor="none", zorder=2))
-    ax.text(0.4, y + 0.02, "비중 증가 TOP 5", fontproperties=font_section,
-            ha="left", va="center", color="white", zorder=3)
-    # Column headers
-    y -= 0.4
-    for x, label in [(col["rank"], "#"), (col["ticker"], "Ticker"),
-                      (col["name"], "종목명"), (col["etf"], "ETF"),
-                      (col["weight"], "비중"), (col["diff"], "1M 변동")]:
-        ax.text(x, y, label, fontproperties=font_header,
-                ha="center", va="center", color="#666666")
-    y -= 0.08
+    def _draw_section(y_top, section_label, section_color, bg_tint, n_rows, get_items, diff_color_fn):
+        y = y_top
+        # Section header (full width)
+        ax.add_patch(plt.Rectangle((0.15, y - 0.15), fig_w - 0.3, 0.34,
+                                    facecolor=section_color, edgecolor="none", zorder=2))
+        ax.text(0.4, y + 0.02, section_label, fontproperties=font_section,
+                ha="left", va="center", color="white", zorder=3)
+        y -= sect_h
 
-    for i, item in enumerate(ups[:5]):
-        y -= row_h
-        if i % 2 == 0:
-            ax.add_patch(plt.Rectangle((0.15, y - row_h / 2 + 0.02),
-                                        fig_w - 0.3, row_h,
-                                        facecolor="#FFF5F5", edgecolor="none", zorder=1))
-        ax.text(col["rank"], y, str(i + 1), fontproperties=font_small,
-                ha="center", va="center", color="#555", zorder=3)
-        ax.text(col["ticker"], y, item.get("ticker", ""), fontproperties=font_header,
-                ha="center", va="center", color="#2C3E50", zorder=3)
-        name = item["name"][:20] + ".." if len(item["name"]) > 20 else item["name"]
-        ax.text(col["name"], y, name, fontproperties=font,
-                ha="center", va="center", color="#333", zorder=3)
-        ax.text(col["etf"], y, item.get("etf_short", ""), fontproperties=font_small,
-                ha="center", va="center", color="#777", zorder=3)
-        ax.text(col["weight"], y, f"{item['weight']:.1f}%", fontproperties=font,
-                ha="center", va="center", color="#333", zorder=3)
-        ds = _diff_str(item["diff"])
-        ax.text(col["diff"], y, ds, fontproperties=font,
-                ha="center", va="center", color="#D32F2F", zorder=3)
+        # ETF sub-headers
+        for ci, etf in enumerate(per_etf_changes):
+            cx = col_starts[ci]
+            ax.add_patch(plt.Rectangle((cx, y - 0.12), col_w, 0.30,
+                                        facecolor="#37474F", edgecolor="none", zorder=2))
+            ax.text(cx + col_w / 2, y + 0.02, etf["short"],
+                    fontproperties=font_header, ha="center", va="center",
+                    color="white", zorder=3)
+        y -= etf_head_h
+
+        # Column headers per ETF
+        for ci in range(n_etfs):
+            cx = col_starts[ci]
+            for key, label in [("rank", "#"), ("ticker", "Ticker"),
+                                ("name", "종목명"), ("weight", "비중"), ("diff", "변동")]:
+                ax.text(cx + rx[key], y, label, fontproperties=font_header,
+                        ha="center", va="center", color="#888888")
+        y -= col_head_h
+
+        # Data rows
+        for ri in range(n_rows):
+            if ri % 2 == 0:
+                for ci in range(n_etfs):
+                    cx = col_starts[ci]
+                    ax.add_patch(plt.Rectangle((cx, y - row_h / 2 + 0.01),
+                                                col_w, row_h,
+                                                facecolor=bg_tint, edgecolor="none", zorder=1))
+            for ci, etf in enumerate(per_etf_changes):
+                items = get_items(etf)
+                if ri >= len(items):
+                    continue
+                item = items[ri]
+                cx = col_starts[ci]
+                ax.text(cx + rx["rank"], y, str(ri + 1), fontproperties=font_small,
+                        ha="center", va="center", color="#555", zorder=3)
+                ax.text(cx + rx["ticker"], y, item.get("ticker", ""),
+                        fontproperties=font_header, ha="center", va="center",
+                        color="#2C3E50", zorder=3)
+                name = item["name"][:12] + ".." if len(item["name"]) > 12 else item["name"]
+                ax.text(cx + rx["name"], y, name, fontproperties=font_small,
+                        ha="center", va="center", color="#333", zorder=3)
+                ax.text(cx + rx["weight"], y, f"{item['weight']:.1f}%",
+                        fontproperties=font_small, ha="center", va="center",
+                        color="#333", zorder=3)
+                ds = _diff_str(item["diff"])
+                ax.text(cx + rx["diff"], y, ds, fontproperties=font_small,
+                        ha="center", va="center", color=diff_color_fn(item["diff"]), zorder=3)
+            y -= row_h
+
+        # Vertical separators between columns
+        top_y = y_top - sect_h + 0.18
+        bot_y = y + 0.05
+        for ci in range(1, n_etfs):
+            sep_x = col_starts[ci] - gap / 2
+            ax.plot([sep_x, sep_x], [bot_y, top_y], color="#DDDDDD",
+                    linewidth=0.8, zorder=1)
+        return y
+
+    # ─ UP section ─
+    y = fig_h - 0.8
+    y = _draw_section(y, "비중 증가 TOP 5", "#C62828", "#FFF5F5", n_ups,
+                       lambda e: e["ups"][:5], lambda v: "#D32F2F")
 
     # ─ DOWN section ─
-    y -= 0.55
-    ax.add_patch(plt.Rectangle((0.15, y - 0.17), fig_w - 0.3, 0.38,
-                                facecolor="#1565C0", edgecolor="none", zorder=2))
-    ax.text(0.4, y + 0.02, "비중 감소 BOTTOM 3", fontproperties=font_section,
-            ha="left", va="center", color="white", zorder=3)
-    y -= 0.4
-    for x, label in [(col["rank"], "#"), (col["ticker"], "Ticker"),
-                      (col["name"], "종목명"), (col["etf"], "ETF"),
-                      (col["weight"], "비중"), (col["diff"], "1M 변동")]:
-        ax.text(x, y, label, fontproperties=font_header,
-                ha="center", va="center", color="#666666")
-    y -= 0.08
-
-    for i, item in enumerate(downs[:3]):
-        y -= row_h
-        if i % 2 == 0:
-            ax.add_patch(plt.Rectangle((0.15, y - row_h / 2 + 0.02),
-                                        fig_w - 0.3, row_h,
-                                        facecolor="#F5F8FF", edgecolor="none", zorder=1))
-        ax.text(col["rank"], y, str(i + 1), fontproperties=font_small,
-                ha="center", va="center", color="#555", zorder=3)
-        ax.text(col["ticker"], y, item.get("ticker", ""), fontproperties=font_header,
-                ha="center", va="center", color="#2C3E50", zorder=3)
-        name = item["name"][:20] + ".." if len(item["name"]) > 20 else item["name"]
-        ax.text(col["name"], y, name, fontproperties=font,
-                ha="center", va="center", color="#333", zorder=3)
-        ax.text(col["etf"], y, item.get("etf_short", ""), fontproperties=font_small,
-                ha="center", va="center", color="#777", zorder=3)
-        ax.text(col["weight"], y, f"{item['weight']:.1f}%", fontproperties=font,
-                ha="center", va="center", color="#333", zorder=3)
-        ds = _diff_str(item["diff"])
-        ax.text(col["diff"], y, ds, fontproperties=font,
-                ha="center", va="center", color="#1565C0", zorder=3)
-
-    # ─ NEW section ─
-    if has_new:
-        y -= 0.55
-        ax.add_patch(plt.Rectangle((0.15, y - 0.17), fig_w - 0.3, 0.38,
-                                    facecolor="#2E7D32", edgecolor="none", zorder=2))
-        ax.text(0.4, y + 0.02, "신규 편입", fontproperties=font_section,
-                ha="left", va="center", color="white", zorder=3)
-        y -= 0.4
-        for x, label in [(col["rank"], "#"), (col["ticker"], "Ticker"),
-                          (col["name"], "종목명"), (col["etf"], "ETF"),
-                          (col["weight"], "비중")]:
-            ax.text(x, y, label, fontproperties=font_header,
-                    ha="center", va="center", color="#666666")
-        y -= 0.08
-        for i, item in enumerate(new_items[:3]):
-            y -= row_h
-            if i % 2 == 0:
-                ax.add_patch(plt.Rectangle((0.15, y - row_h / 2 + 0.02),
-                                            fig_w - 0.3, row_h,
-                                            facecolor="#F5FFF5", edgecolor="none", zorder=1))
-            ax.text(col["rank"], y, str(i + 1), fontproperties=font_small,
-                    ha="center", va="center", color="#555", zorder=3)
-            ax.text(col["ticker"], y, item.get("ticker", ""), fontproperties=font_header,
-                    ha="center", va="center", color="#2C3E50", zorder=3)
-            name = item["name"][:20] + ".." if len(item["name"]) > 20 else item["name"]
-            ax.text(col["name"], y, name, fontproperties=font,
-                    ha="center", va="center", color="#333", zorder=3)
-            ax.text(col["etf"], y, item.get("etf_short", ""), fontproperties=font_small,
-                    ha="center", va="center", color="#777", zorder=3)
-            ax.text(col["weight"], y, f"{item['weight']:.1f}%", fontproperties=font,
-                    ha="center", va="center", color="#4CAF50", zorder=3)
+    y -= 0.2
+    y = _draw_section(y, "비중 감소 BOTTOM 3", "#1565C0", "#F5F8FF", n_downs,
+                       lambda e: e["downs"][:3], lambda v: "#1565C0")
 
     path = os.path.join(IMG_DIR, f"etf_p1_changes_{date}.png")
     fig.savefig(path, dpi=150, bbox_inches="tight", facecolor="white", pad_inches=0.1)
@@ -535,8 +516,10 @@ def render_page_news(group_label, date, movers_with_news):
 
     for i, m in enumerate(movers_with_news):
         diff_s = _diff_str(m["diff"])
-        arrow = "+" if m["diff"] > 0 else ""
         dc = "#D32F2F" if m["diff"] > 0 else "#1565C0"
+        d1_val = m.get("d1")
+        d1_s = _diff_str(d1_val) if d1_val is not None else "-"
+        d1_c = _diff_color(d1_val) if d1_val is not None else "#999999"
 
         # Stock header line
         tk = m.get("ticker", "")
@@ -544,7 +527,8 @@ def render_page_news(group_label, date, movers_with_news):
         header = f"{i+1}. {tk_s}{m['name']}  ({m['etf_short']})"
         ax.text(0.3, y, header, fontproperties=font_header,
                 ha="left", va="center", color="#1A1A2E", zorder=3)
-        tag = f"{diff_s}%p  ->  {m['weight']:.1f}%"
+        # 현재비중 + 변동(1M) + 1D
+        tag = f"비중 {m['weight']:.1f}%  |  변동 {diff_s}%p  |  1D {d1_s}"
         ax.text(fig_w - 0.3, y, tag, fontproperties=font,
                 ha="right", va="center", color=dc, zorder=3)
 
@@ -735,28 +719,25 @@ def _ticker_label(item):
     return f"{tk}  " if tk else ""
 
 
-def build_text_report(group_label, date, all_ups, all_downs, all_new,
+def build_text_report(group_label, date, per_etf_changes,
                       etf_sections, movers_with_news, errors):
     lines = [
         f"TIMEFOLIO {group_label} ETF 리포트",
         f"{date}",
         "=" * 32, "",
-        "[ 비중 증가 TOP 5 ]",
     ]
-    for i, u in enumerate(all_ups[:5], 1):
-        tk = _ticker_label(u)
-        lines.append(f"  {i}. {tk}{u['name']} ({u.get('etf_short','')})  "
-                      f"{u['weight']:.1f}%  {_diff_str(u['diff'])}")
-    lines += ["", "[ 비중 감소 BOTTOM 3 ]"]
-    for i, d in enumerate(all_downs[:3], 1):
-        tk = _ticker_label(d)
-        lines.append(f"  {i}. {tk}{d['name']} ({d.get('etf_short','')})  "
-                      f"{d['weight']:.1f}%  {_diff_str(d['diff'])}")
-    if all_new:
-        lines += ["", "[ 신규 편입 ]"]
-        for n in all_new[:3]:
-            tk = _ticker_label(n)
-            lines.append(f"  {tk}{n['name']} ({n.get('etf_short','')})  {n['weight']:.1f}%")
+    for etf in per_etf_changes:
+        lines.append(f"[ {etf['short']} 비중 증가 TOP 5 ]")
+        for i, u in enumerate(etf["ups"][:5], 1):
+            tk = _ticker_label(u)
+            lines.append(f"  {i}. {tk}{u['name']}  "
+                          f"{u['weight']:.1f}%  {_diff_str(u['diff'])}")
+        lines += ["", f"[ {etf['short']} 비중 감소 BOTTOM 3 ]"]
+        for i, d in enumerate(etf["downs"][:3], 1):
+            tk = _ticker_label(d)
+            lines.append(f"  {i}. {tk}{d['name']}  "
+                          f"{d['weight']:.1f}%  {_diff_str(d['diff'])}")
+        lines.append("")
 
     lines += ["", "-" * 32, ""]
     for sect in etf_sections:
@@ -795,11 +776,9 @@ def run(etf_keys=None, generate_images=True):
     errors = []
 
     # Collect per-ETF data
-    all_ups = []
-    all_downs = []
-    all_new = []
-    etf_sections = []  # for page 2
-    all_movers = []    # for page 3
+    per_etf_changes = []   # for page 1 (per-ETF ups/downs)
+    etf_sections = []      # for page 2
+    all_movers = []        # for page 3
 
     for key in etf_keys:
         if key not in ETFS:
@@ -837,17 +816,14 @@ def run(etf_keys=None, generate_images=True):
                         except ValueError:
                             pass
 
-            # Parse AJAX changes for page 1
+            # Parse AJAX changes for page 1 (per-ETF)
             m1_ups, m1_downs, m1_news = parse_ajax_changes(m1, ticker_map)
-            for item in m1_ups:
-                item["etf_short"] = cfg["short"]
-            for item in m1_downs:
-                item["etf_short"] = cfg["short"]
-            for item in m1_news:
-                item["etf_short"] = cfg["short"]
-            all_ups.extend(m1_ups)
-            all_downs.extend(m1_downs)
-            all_new.extend(m1_news)
+            per_etf_changes.append({
+                "short": cfg["short"],
+                "name": cfg["name"],
+                "ups": m1_ups[:5],
+                "downs": m1_downs[:3],
+            })
 
             # Page 2: holdings rows
             rows = []
@@ -871,11 +847,15 @@ def run(etf_keys=None, generate_images=True):
                 "rows": rows,
             })
 
-            # Page 3: collect movers
+            # Page 3: collect movers (include d1 data)
             for item in m1_ups[:5]:
-                all_movers.append({**item, "etf_short": cfg["short"]})
+                item["etf_short"] = cfg["short"]
+                item["d1"] = d1_map.get(item["name"])
+                all_movers.append(item)
             for item in m1_downs[:3]:
-                all_movers.append({**item, "etf_short": cfg["short"]})
+                item["etf_short"] = cfg["short"]
+                item["d1"] = d1_map.get(item["name"])
+                all_movers.append(item)
 
         except Exception as e:
             errors.append(f"{key}: {e}")
@@ -892,16 +872,12 @@ def run(etf_keys=None, generate_images=True):
     if date is None:
         date = datetime.now().strftime("%Y-%m-%d")
 
-    # Sort movers
-    all_ups.sort(key=lambda x: x["diff"], reverse=True)
-    all_downs.sort(key=lambda x: x["diff"])
-
     # Dedupe movers for page 3
     seen = {}
     for m in all_movers:
-        key = m["name"]
-        if key not in seen or abs(m["diff"]) > abs(seen[key]["diff"]):
-            seen[key] = m
+        mkey = m["name"]
+        if mkey not in seen or abs(m["diff"]) > abs(seen[mkey]["diff"]):
+            seen[mkey] = m
     top_movers = sorted(seen.values(), key=lambda x: abs(x["diff"]), reverse=True)[:8]
 
     # Fetch news for movers (page 3)
@@ -918,7 +894,7 @@ def run(etf_keys=None, generate_images=True):
     # Generate images
     image_paths = []
     if generate_images and HAS_MPL:
-        p1 = render_page_changes(group_label, date, all_ups, all_downs, all_new)
+        p1 = render_page_changes(group_label, date, per_etf_changes)
         if p1:
             image_paths.append(p1)
         p2 = render_page_holdings(group_label, date, etf_sections)
@@ -929,7 +905,7 @@ def run(etf_keys=None, generate_images=True):
             image_paths.append(p3)
 
     # Text report (fallback)
-    report = build_text_report(group_label, date, all_ups, all_downs, all_new,
+    report = build_text_report(group_label, date, per_etf_changes,
                                 etf_sections, movers_with_news, errors)
     return report, image_paths
 
