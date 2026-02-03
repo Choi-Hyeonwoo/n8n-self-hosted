@@ -813,10 +813,11 @@ def deep_research_analysis(etf_name, movers, per_etf_changes):
 ## 분석 요청:
 위 정보를 바탕으로 각 종목별로 다음 형식으로 복합적 분석을 작성해주세요:
 
-1. **[종목명]**: [종목의 사업 특성], [최근 뉴스/실적/업황]을 고려해 [비중 확대/축소/편입] 판단. [구체적 사유 1-2문장]
+1. <b>[종목명]</b>: [종목의 사업 특성], [최근 뉴스/실적/업황]을 고려해 [비중 확대/축소/편입] 판단. [구체적 사유 1-2문장]
 
 전체를 3-4개 종목으로 요약하고, 마지막에 ETF 전체 포트폴리오 방향성을 1문장으로 정리해주세요.
-이모지 없이, 간결하게 작성하세요."""
+이모지 없이, 간결하게 작성하세요.
+중요: <b>종목명</b> 형식으로 bold 태그를 반드시 사용하세요 (Telegram HTML 형식)."""
 
     try:
         client = anthropic.Anthropic()
@@ -1228,21 +1229,24 @@ def build_text_report(group_label, date, per_etf_changes,
 
 
 def _build_basic_etf_analysis(changes, movers):
-    """Fallback basic analysis when Claude API is not available."""
+    """Fallback basic analysis when Claude API is not available.
+
+    Uses HTML formatting for Telegram.
+    """
     lines = []
     ups = changes.get("ups", [])
     downs = changes.get("downs", [])
 
     if ups:
         top_up = ups[0]
-        lines.append(f"• 최대 증가: {top_up['name']} (+{top_up['diff']:.2f}%p)")
+        lines.append(f"• <b>{top_up['name']}</b>: +{top_up['diff']:.2f}%p 증가")
     if downs:
         top_down = downs[0]
-        lines.append(f"• 최대 감소: {top_down['name']} ({top_down['diff']:.2f}%p)")
+        lines.append(f"• <b>{top_down['name']}</b>: {top_down['diff']:.2f}%p 감소")
 
     new_stocks = [m for m in movers if m.get("is_new")]
     if new_stocks:
-        new_names = ", ".join([s["name"][:10] for s in new_stocks[:3]])
+        new_names = ", ".join([f"<b>{s['name'][:10]}</b>" for s in new_stocks[:3]])
         lines.append(f"• 신규편입: {new_names}")
 
     key_judgments = []
@@ -1260,15 +1264,20 @@ def _build_basic_etf_analysis(changes, movers):
 
 # ─── Deep Analysis Summary ────────────────────────────────────────────
 def build_analysis_summary(group_label, date, per_etf_changes, per_etf_news, use_deep_research=True):
-    """Generate deep analysis summary for Telegram message with Claude API deep research."""
-    lines = [f"📊 TIMEFOLIO {group_label} ETF 분석 리포트", f"📅 {date}", ""]
+    """Generate deep analysis summary for Telegram message with Claude API deep research.
+
+    Uses HTML formatting for Telegram (parse_mode='HTML'):
+    - <b>bold</b> for emphasis
+    - <i>italic</i> for secondary emphasis
+    """
+    lines = [f"📊 <b>TIMEFOLIO {group_label} ETF 분석 리포트</b>", f"📅 {date}", ""]
 
     # Deep research for each ETF
     for i, (changes, news) in enumerate(zip(per_etf_changes, per_etf_news)):
         etf_name = changes["etf_name"]
         movers = news.get("movers", [])
 
-        lines.append(f"▶ {etf_name}")
+        lines.append(f"<b>▶ {etf_name}</b>")
         lines.append("")
 
         # Use Claude API for deep research
@@ -1286,7 +1295,7 @@ def build_analysis_summary(group_label, date, per_etf_changes, per_etf_news, use
 
     # Overall portfolio analysis
     lines.append("━━━━━━━━━━━━━━━━━━━━━━")
-    lines.append("📈 포트폴리오 종합 판단")
+    lines.append("<b>📈 포트폴리오 종합 판단</b>")
     lines.append("")
 
     # Aggregate analysis
@@ -1306,9 +1315,9 @@ def build_analysis_summary(group_label, date, per_etf_changes, per_etf_news, use
     if cash_changes:
         avg_cash = sum(cash_changes) / len(cash_changes)
         if avg_cash > 0.3:
-            lines.append("• 방어적 포지션 전환 — 현금 비중 증가 추세")
+            lines.append("• <b>방어적 포지션</b> 전환 — 현금 비중 증가 추세")
         elif avg_cash < -0.3:
-            lines.append("• 적극적 투자 확대 — 현금 비중 감소 추세")
+            lines.append("• <b>적극적 투자 확대</b> — 현금 비중 감소 추세")
 
     # Sector rotation hints
     all_movers = []
@@ -1329,21 +1338,21 @@ def build_analysis_summary(group_label, date, per_etf_changes, per_etf_news, use
 
     top_themes = sorted(themes.items(), key=lambda x: x[1], reverse=True)[:2]
     if top_themes[0][1] > 0:
-        theme_str = ", ".join([t[0] for t in top_themes if t[1] > 0])
+        theme_str = ", ".join([f"<b>{t[0]}</b>" for t in top_themes if t[1] > 0])
         lines.append(f"• 주요 테마: {theme_str} 섹터 중심 리밸런싱")
 
     # New additions summary
     if all_new:
-        lines.append(f"• 신규편입 종목: {len(all_new)}개 — 포트폴리오 다변화 진행")
+        lines.append(f"• <b>신규편입</b>: {len(all_new)}개 — 포트폴리오 다변화 진행")
 
     # Final conclusion
     lines.append("")
     if total_ups > total_downs * 1.5:
-        lines.append("💡 결론: 전반적 비중 확대 기조 — 시장 상승 기대감 반영")
+        lines.append("💡 <b>결론</b>: 전반적 비중 확대 기조 — 시장 상승 기대감 반영")
     elif total_downs > total_ups * 1.5:
-        lines.append("💡 결론: 전반적 비중 축소 기조 — 리스크 관리 강화")
+        lines.append("💡 <b>결론</b>: 전반적 비중 축소 기조 — 리스크 관리 강화")
     else:
-        lines.append("💡 결론: 섹터별 선별적 리밸런싱 — 차별화 전략 유지")
+        lines.append("💡 <b>결론</b>: 섹터별 선별적 리밸런싱 — 차별화 전략 유지")
 
     return "\n".join(lines)
 
