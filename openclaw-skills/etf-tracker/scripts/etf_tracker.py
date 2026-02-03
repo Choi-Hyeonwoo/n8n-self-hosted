@@ -494,31 +494,31 @@ def render_page1(group_label, date, per_etf_changes, etf_sections, is_overseas=F
     return path
 
 
-# ─── Page 2: 주요 종목 뉴스 분석 (원인 2줄 + 판단 1줄) ─────────────
+# ─── Page 2: 주요 종목 뉴스 분석 (2행 가로 배치) ─────────────────────
 def render_page2_news(group_label, date, per_etf_news):
-    """Full-width news analysis: up to 2 cause lines + 1 judgment line per mover."""
+    """Horizontal 2-row layout: [종목|기사/원인|판단] per mover."""
     if not HAS_MPL or not per_etf_news:
         return None
     fonts = _get_fonts()
     font, font_title, font_section, font_header, font_small, font_news = fonts
 
     fig_w = 14.0
-    line_h = 0.28
-    mover_h = 0.34
+    row_h = 0.30
     sect_h = 0.40
-    spacing = 0.30
+    mover_gap = 0.10
+    spacing = 0.25
+
+    # Column positions (left | center | right)
+    lx = 0.4       # left: 종목/비중
+    cx = 3.3        # center: 기사/원인 (widest area)
+    rx = 10.5       # right: 판단
 
     # Calculate height
     total_h = 0.7
     for en in per_etf_news:
-        total_h += sect_h
-        for m in en.get("movers", []):
-            total_h += mover_h
-            analysis = m.get("analysis", {})
-            n_causes = len(analysis.get("causes", []))
-            total_h += n_causes * line_h      # cause lines
-            total_h += line_h                  # judgment line
-            total_h += 0.10
+        total_h += sect_h + 0.28  # header + column labels
+        n_movers = len(en.get("movers", []))
+        total_h += n_movers * (2 * row_h + mover_gap)
         total_h += spacing
     total_h += 0.3
     fig_h = max(total_h, 3.0)
@@ -537,6 +537,7 @@ def render_page2_news(group_label, date, per_etf_news):
     y -= 0.48
 
     for si, en in enumerate(per_etf_news):
+        # ETF section header
         ax.add_patch(plt.Rectangle((0.15, y - 0.15), fig_w - 0.3, 0.35,
                                     facecolor="#2C3E50", edgecolor="none", zorder=2))
         ax.text(0.4, y + 0.02, en["etf_name"],
@@ -544,38 +545,39 @@ def render_page2_news(group_label, date, per_etf_news):
                 color="white", zorder=3)
         y -= sect_h
 
+        # Column labels
+        ax.text(lx, y, "종목 / 비중", fontproperties=font_header,
+                ha="left", va="center", color="#888888")
+        ax.text(cx, y, "원인 / 기사", fontproperties=font_header,
+                ha="left", va="center", color="#888888")
+        ax.text(rx, y, "변동 판단", fontproperties=font_header,
+                ha="left", va="center", color="#888888")
+        y -= 0.28
+
         movers = en.get("movers", [])
+        sect_top_y = y
+
         for mi, m in enumerate(movers):
             is_new = m.get("is_new", False)
             diff = m.get("diff")
 
             if is_new:
                 dc = "#4CAF50"
-                tag = f"비중 {m['weight']:.1f}%  신규편입"
                 bg = "#E8F5E9"
             elif diff is not None and diff > 0:
                 dc = "#D32F2F"
-                tag = f"비중 {m['weight']:.1f}%  {_diff_str(diff)}%p"
                 bg = "#FFF5F5"
             else:
                 dc = "#1565C0"
-                tag = f"비중 {m['weight']:.1f}%  {_diff_str(diff)}%p"
                 bg = "#F5F8FF"
 
-            # Mover header bar
-            ax.add_patch(plt.Rectangle((0.15, y - mover_h / 2 + 0.01),
-                                        fig_w - 0.3, mover_h,
+            # Background rectangle spanning 2 rows
+            bg_h = 2 * row_h
+            ax.add_patch(plt.Rectangle((0.15, y - bg_h + 0.02),
+                                        fig_w - 0.3, bg_h - 0.04,
                                         facecolor=bg, edgecolor="none", zorder=1))
-            tk = m.get("ticker", "")
-            nm = m["name"][:18] + ".." if len(m["name"]) > 18 else m["name"]
-            header = f"{'[신규] ' if is_new else ''}{tk}  {nm}" if tk else f"{'[신규] ' if is_new else ''}{nm}"
-            ax.text(0.4, y, header, fontproperties=font_header,
-                    ha="left", va="center", color="#1A1A2E", zorder=3)
-            ax.text(fig_w - 0.3, y, tag, fontproperties=font_small,
-                    ha="right", va="center", color=dc, zorder=3)
-            y -= mover_h
 
-            # Analysis: causes (1-2 lines) + judgment (1 line)
+            # Get analysis
             analysis = m.get("analysis", {})
             if isinstance(analysis, str):
                 causes = [analysis]
@@ -584,23 +586,67 @@ def render_page2_news(group_label, date, per_etf_news):
                 causes = analysis.get("causes", [])
                 judgment = analysis.get("judgment", "")
 
-            for ci, cause_line in enumerate(causes[:2]):
-                if len(cause_line) > 75:
-                    cause_line = cause_line[:73] + ".."
-                ax.text(0.7, y, f"• {cause_line}",
+            tk = m.get("ticker", "")
+            nm = m["name"][:16] + ".." if len(m["name"]) > 16 else m["name"]
+
+            # ── Row 1: 종목명 | 원인1 | 판단 ──
+            # Left: ticker + name
+            name_label = f"{'[신규] ' if is_new else ''}{tk}  {nm}" if tk else f"{'[신규] ' if is_new else ''}{nm}"
+            ax.text(lx, y - row_h / 2, name_label,
+                    fontproperties=font_header, ha="left", va="center",
+                    color="#1A1A2E", zorder=3)
+
+            # Center: cause line 1
+            if causes:
+                c1 = causes[0]
+                if len(c1) > 60:
+                    c1 = c1[:58] + ".."
+                ax.text(cx, y - row_h / 2, f"• {c1}",
                         fontproperties=font_news, ha="left", va="center",
                         color="#37474F", zorder=3)
-                y -= line_h
 
+            # Right: judgment
             if judgment:
-                if len(judgment) > 75:
-                    judgment = judgment[:73] + ".."
-                ax.text(0.7, y, f">> {judgment}",
+                jd = judgment
+                if len(jd) > 35:
+                    jd = jd[:33] + ".."
+                ax.text(rx, y - row_h / 2, jd,
                         fontproperties=font_news, ha="left", va="center",
                         color=dc, zorder=3)
-                y -= line_h
 
-            y -= 0.10
+            y -= row_h
+
+            # ── Row 2: 비중/변동 | 원인2 | ──
+            # Left: 비중 + 변동
+            if is_new:
+                diff_label = f"비중 {m['weight']:.1f}%  신규편입"
+            else:
+                ds = _diff_str(diff)
+                if ds != "-":
+                    ds += "%p"
+                diff_label = f"비중 {m['weight']:.1f}%  {ds}"
+            ax.text(lx, y - row_h / 2, diff_label,
+                    fontproperties=font_small, ha="left", va="center",
+                    color=dc, zorder=3)
+
+            # Center: cause line 2
+            if len(causes) > 1:
+                c2 = causes[1]
+                if len(c2) > 60:
+                    c2 = c2[:58] + ".."
+                ax.text(cx, y - row_h / 2, f"• {c2}",
+                        fontproperties=font_news, ha="left", va="center",
+                        color="#37474F", zorder=3)
+
+            y -= row_h
+            y -= mover_gap
+
+        # Column separator lines
+        if movers:
+            ax.plot([cx - 0.1, cx - 0.1], [sect_top_y, y + mover_gap],
+                    color="#E0E0E0", linewidth=0.5, zorder=1)
+            ax.plot([rx - 0.1, rx - 0.1], [sect_top_y, y + mover_gap],
+                    color="#E0E0E0", linewidth=0.5, zorder=1)
 
         if si < len(per_etf_news) - 1:
             y -= spacing
@@ -633,6 +679,12 @@ _KR_ALIASES = {
     "Elite Material": "엘리트 머티리얼 PCB",
     "NVIDIA Corp": "엔비디아",
     "STX": "STX 해운 조선",
+    "Nanya": "난야 테크놀로지",
+    "Hesai": "헤사이 라이다",
+    "Cambricon": "캠브리콘 AI",
+    "Hua Hong": "화홍 반도체",
+    "UBTech": "유비테크 로봇",
+    "Macronix": "매크로닉스 플래시",
 }
 
 _IB_NAMES = [
@@ -698,6 +750,9 @@ _NOISE_PATTERNS = [
     r'(수익률|상승률|하락률|등락률)\s*\d+',
     r'\d+%\s*(수익|수익률|리턴)',
     r'(몇|얼마나)\s*(올|상승|하락)',
+    r'[\'"]?(껑충|뚝|쑥|훌쩍)[\'"]?',
+    r'(마감|장마감|종장)\s*(직전|직후)',
+    r'vs\s+\w+\s*[\'"]?(뚝|하락)',
 ]
 
 
@@ -730,6 +785,20 @@ def _is_causal_headline(title):
     return any(kw in title for kw in _CAUSAL_KEYWORDS)
 
 
+def _is_stock_mentioned(headline, orig_name, clean_name):
+    """Check if headline specifically mentions this stock."""
+    hl_lower = headline.lower()
+    # Check first significant English name part
+    parts = [p for p in re.split(r'[\s/,.()\-]+', orig_name) if len(p) > 2]
+    if parts and parts[0].lower() in hl_lower:
+        return True
+    # Check Korean alias parts
+    for part in clean_name.split():
+        if len(part) > 1 and part in headline:
+            return True
+    return False
+
+
 def fetch_stock_news(name, limit=3):
     """Fetch news, filtering noise and result-type articles. Returns more to allow filtering."""
     clean = _clean_stock_name(name)
@@ -757,11 +826,13 @@ def fetch_stock_news(name, limit=3):
                 continue
             ib = _extract_ib(raw_title)
             is_causal = _is_causal_headline(title)
+            is_relevant = _is_stock_mentioned(title, name, clean)
             results.append({
                 "title": title,
                 "source": source,
                 "ib": ib,
                 "is_causal": is_causal,
+                "is_relevant": is_relevant,
             })
             if len(results) >= limit:
                 break
@@ -871,76 +942,97 @@ KEYWORD_RULES = [
 ]
 
 
-def analyze_headlines(news_items, diff, is_new=False):
+def _get_cash_analysis(diff):
+    """Special analysis for 현금 (cash position changes)."""
+    if diff > 0:
+        return {
+            "causes": [
+                "시장 변동성 확대에 따른 방어적 포지션 전환",
+                "포트폴리오 리밸런싱 과정에서 현금 비중 자연 증가",
+            ],
+            "judgment": "리스크 관리 차원 현금 확보 판단",
+        }
+    return {
+        "causes": [
+            "유망 종목 투자 기회 포착 — 현금 집행",
+            "시장 회복 기대에 따른 적극적 비중 확대",
+        ],
+        "judgment": "투자 기회 활용을 위한 현금 투입 판단",
+    }
+
+
+def analyze_headlines(news_items, diff, stock_name="", is_new=False):
     """Returns dict with:
     - causes: list of 1-2 strings (factual reasons for price change)
     - judgment: single string (weight change conclusion)
+    Only uses headlines that are RELEVANT (mention the stock) AND CAUSAL.
     """
-    headlines = [n["title"] for n in news_items] if news_items else []
-    causal_headlines = [n["title"] for n in news_items
-                        if n.get("is_causal", False)] if news_items else []
+    # Get short display name for keyword causes
+    display_name = _clean_stock_name(stock_name).split()[0] if stock_name else ""
+
+    # Only use relevant + causal headlines
+    relevant_causal = [n["title"] for n in news_items
+                       if n.get("is_relevant") and n.get("is_causal")] if news_items else []
+    # Relevant headlines for keyword matching
+    relevant_headlines = [n["title"] for n in news_items
+                         if n.get("is_relevant")] if news_items else []
 
     if is_new:
         causes = []
         judgment = "신규 편입 — 포트폴리오 다변화 또는 신규 테마 반영"
-        if headlines:
-            combined = " ".join(headlines)
+        if relevant_headlines:
+            combined = " ".join(relevant_headlines)
             for keywords, pos_t, neg_t in KEYWORD_RULES:
                 if any(kw in combined for kw in keywords):
-                    causes.append(pos_t[0])
+                    cause_text = f"{display_name}, {pos_t[0]}" if display_name else pos_t[0]
+                    causes.append(cause_text)
                     judgment = "신규 편입 — " + pos_t[1].split(" → ")[0]
                     break
-            # Add a causal headline if available
-            if causal_headlines:
-                hl = causal_headlines[0][:65]
+            if relevant_causal:
+                hl = relevant_causal[0][:65]
                 if not causes or hl != causes[0]:
                     causes.append(hl)
         if not causes:
             causes = ["신규 편입 종목 — 포트폴리오 구성 변경"]
         return {"causes": causes[:2], "judgment": judgment}
 
-    if not headlines:
-        if diff > 0:
-            return {"causes": ["상세 사유 확인 필요"],
-                    "judgment": "비중 확대 판단"}
-        return {"causes": ["상세 사유 확인 필요"],
-                "judgment": "비중 축소 판단"}
+    if not relevant_headlines:
+        dir_text = "비중 확대" if diff > 0 else "비중 축소"
+        return {"causes": [f"관련 사유 확인 불가"],
+                "judgment": f"{dir_text} 판단"}
 
-    combined = " ".join(headlines)
+    combined = " ".join(relevant_headlines)
     keyword_cause = None
     keyword_judgment = None
 
     for keywords, pos_t, neg_t in KEYWORD_RULES:
         if any(kw in combined for kw in keywords):
             t = pos_t if diff > 0 else neg_t
-            keyword_cause = t[0]
+            keyword_cause = f"{display_name}, {t[0]}" if display_name else t[0]
             keyword_judgment = t[1]
             break
 
-    # Build causes list: causal headlines first, then keyword cause
+    # Build causes list: relevant causal headlines first, then keyword cause
     causes = []
-    for hl in causal_headlines[:2]:
-        if len(hl) > 65:
-            hl = hl[:63] + ".."
+    for hl in relevant_causal[:2]:
+        if len(hl) > 70:
+            hl = hl[:68] + ".."
         causes.append(hl)
 
-    if keyword_cause and keyword_cause not in causes:
-        if len(causes) < 2:
+    if keyword_cause:
+        if len(causes) < 2 and keyword_cause not in causes:
             causes.append(keyword_cause)
 
     if not causes:
-        # No causal headlines and no keyword match
-        if diff > 0:
-            causes = ["관련 뉴스 기반 원인 특정 어려움"]
-        else:
-            causes = ["관련 뉴스 기반 원인 특정 어려움"]
+        dir_text = "비중 확대" if diff > 0 else "비중 축소"
+        causes = [f"관련 사유 확인 불가"]
 
     if keyword_judgment:
         judgment = keyword_judgment
     elif diff > 0:
-        judgment = "상기 사유에 의한 비중 확대 판단"
+        judgment = "비중 확대 판단"
     else:
-        judgment = "상기 사유에 의한 비중 축소 판단"
+        judgment = "비중 축소 판단"
 
     return {"causes": causes[:2], "judgment": judgment}
 
@@ -1129,20 +1221,32 @@ def run(etf_keys=None, generate_images=True):
 
             etf_movers = []
             for item in etf_movers_raw:
-                news_items = fetch_stock_news(item["name"], limit=3)
-                analysis = analyze_headlines(news_items, item["diff"])
-                etf_movers.append({
-                    **item,
-                    "etf_short": cfg["name"],
-                    "news_items": news_items,
-                    "analysis": analysis,
-                    "is_new": False,
-                })
+                if item["name"] == "현금":
+                    analysis = _get_cash_analysis(item["diff"])
+                    etf_movers.append({
+                        **item,
+                        "etf_short": cfg["name"],
+                        "news_items": [],
+                        "analysis": analysis,
+                        "is_new": False,
+                    })
+                else:
+                    news_items = fetch_stock_news(item["name"], limit=3)
+                    analysis = analyze_headlines(news_items, item["diff"],
+                                                stock_name=item["name"])
+                    etf_movers.append({
+                        **item,
+                        "etf_short": cfg["name"],
+                        "news_items": news_items,
+                        "analysis": analysis,
+                        "is_new": False,
+                    })
 
             # 신규편입 stocks (from m1)
             for item in m1_news[:2]:
                 news_items = fetch_stock_news(item["name"], limit=3)
-                analysis = analyze_headlines(news_items, 0, is_new=True)
+                analysis = analyze_headlines(news_items, 0,
+                                            stock_name=item["name"], is_new=True)
                 etf_movers.append({
                     **item,
                     "diff": 0,
