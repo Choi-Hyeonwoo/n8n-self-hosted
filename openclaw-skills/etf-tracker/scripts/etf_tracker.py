@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-TIMEFOLIO ETF Holdings Tracker v9
+TIMEFOLIO ETF Holdings Tracker v11
 - Page 1: ETF별 1일 비중 변동 TOP 5 / BOTTOM 3 + Holdings TOP 10 통합
 - Page 2: 주요 종목 뉴스 분석 (원인 2줄 + 판단 1줄, 결과성 기사 제외)
 - 비중 변동·뉴스 분석 모두 1D 기준 (d1_map)
 - 1D/1W: pdfDate로 실제 과거 날짜 holdings 가져와서 비교
 - 1M: pdfM1 AJAX (timeetf 1개월 전 비교, Holdings 테이블용)
+- v11: 칼럼 라벨 상단 1회만, By Investing.com 제거, 현금 회색, 신규편입 전체 표시
 """
 
 import urllib.request
@@ -514,9 +515,9 @@ def render_page2_news(group_label, date, per_etf_news):
     rx = 10.5       # right: 판단
 
     # Calculate height
-    total_h = 0.7
+    total_h = 0.7 + 0.32  # title + column labels (once at top)
     for en in per_etf_news:
-        total_h += sect_h + 0.28  # header + column labels
+        total_h += sect_h  # ETF header only (no column labels)
         n_movers = len(en.get("movers", []))
         total_h += n_movers * (2 * row_h + mover_gap)
         total_h += spacing
@@ -536,6 +537,15 @@ def render_page2_news(group_label, date, per_etf_news):
             ha="right", va="center", color="#888888")
     y -= 0.48
 
+    # Column labels (only once at top)
+    ax.text(lx, y, "종목 / 비중", fontproperties=font_header,
+            ha="left", va="center", color="#888888")
+    ax.text(cx, y, "원인 / 기사", fontproperties=font_header,
+            ha="left", va="center", color="#888888")
+    ax.text(rx, y, "변동 판단", fontproperties=font_header,
+            ha="left", va="center", color="#888888")
+    y -= 0.32
+
     for si, en in enumerate(per_etf_news):
         # ETF section header
         ax.add_patch(plt.Rectangle((0.15, y - 0.15), fig_w - 0.3, 0.35,
@@ -545,23 +555,19 @@ def render_page2_news(group_label, date, per_etf_news):
                 color="white", zorder=3)
         y -= sect_h
 
-        # Column labels
-        ax.text(lx, y, "종목 / 비중", fontproperties=font_header,
-                ha="left", va="center", color="#888888")
-        ax.text(cx, y, "원인 / 기사", fontproperties=font_header,
-                ha="left", va="center", color="#888888")
-        ax.text(rx, y, "변동 판단", fontproperties=font_header,
-                ha="left", va="center", color="#888888")
-        y -= 0.28
-
         movers = en.get("movers", [])
         sect_top_y = y
 
         for mi, m in enumerate(movers):
             is_new = m.get("is_new", False)
             diff = m.get("diff")
+            is_cash = m.get("name") == "현금"
 
-            if is_new:
+            if is_cash:
+                # Gray styling for cash position
+                dc = "#666666"
+                bg = "#F5F5F5"
+            elif is_new:
                 dc = "#4CAF50"
                 bg = "#E8F5E9"
             elif diff is not None and diff > 0:
@@ -820,6 +826,8 @@ def fetch_stock_news(name, limit=3):
             raw_title = _strip_html(title_m.group(1))
             source = _strip_html(source_m.group(1)) if source_m else ""
             title = re.sub(r'\s*-\s*[^-]{2,30}$', '', raw_title)
+            # Remove "By Investing.com" suffix
+            title = re.sub(r'\s*By\s+Investing\.com\s*$', '', title, flags=re.IGNORECASE)
             if not title or len(title) <= 5:
                 continue
             if _is_noise_headline(title):
@@ -1242,8 +1250,8 @@ def run(etf_keys=None, generate_images=True):
                         "is_new": False,
                     })
 
-            # 신규편입 stocks (from m1)
-            for item in m1_news[:2]:
+            # 신규편입 stocks (from m1) - show all
+            for item in m1_news:
                 news_items = fetch_stock_news(item["name"], limit=3)
                 analysis = analyze_headlines(news_items, 0,
                                             stock_name=item["name"], is_new=True)
