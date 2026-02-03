@@ -1104,6 +1104,111 @@ def build_text_report(group_label, date, per_etf_changes,
     return "\n".join(lines)
 
 
+# ─── Deep Analysis Summary ────────────────────────────────────────────
+def build_analysis_summary(group_label, date, per_etf_changes, per_etf_news):
+    """Generate deep analysis summary for Telegram message."""
+    lines = [f"📊 TIMEFOLIO {group_label} ETF 분석 리포트", f"📅 {date}", ""]
+
+    # Analyze each ETF
+    for i, (changes, news) in enumerate(zip(per_etf_changes, per_etf_news)):
+        etf_name = changes["etf_name"]
+        ups = changes.get("ups", [])
+        downs = changes.get("downs", [])
+        movers = news.get("movers", [])
+
+        lines.append(f"▶ {etf_name}")
+
+        # Key changes summary
+        if ups:
+            top_up = ups[0]
+            lines.append(f"  • 최대 증가: {top_up['name']} (+{top_up['diff']:.2f}%p)")
+        if downs:
+            top_down = downs[0]
+            lines.append(f"  • 최대 감소: {top_down['name']} ({top_down['diff']:.2f}%p)")
+
+        # New additions
+        new_stocks = [m for m in movers if m.get("is_new")]
+        if new_stocks:
+            new_names = ", ".join([s["name"][:8] for s in new_stocks[:3]])
+            lines.append(f"  • 신규편입: {new_names}")
+
+        # Key analysis from movers
+        key_judgments = []
+        for m in movers[:2]:
+            analysis = m.get("analysis", {})
+            if isinstance(analysis, dict):
+                jd = analysis.get("judgment", "")
+                if jd and "→" in jd:
+                    key_judgments.append(jd.split("→")[0].strip())
+        if key_judgments:
+            lines.append(f"  • 주요 사유: {'; '.join(key_judgments[:2])}")
+
+        lines.append("")
+
+    # Overall portfolio analysis
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━")
+    lines.append("📈 포트폴리오 종합 판단")
+    lines.append("")
+
+    # Aggregate analysis
+    total_ups = sum(len(c.get("ups", [])) for c in per_etf_changes)
+    total_downs = sum(len(c.get("downs", [])) for c in per_etf_changes)
+    all_new = []
+    cash_changes = []
+
+    for news in per_etf_news:
+        for m in news.get("movers", []):
+            if m.get("is_new"):
+                all_new.append(m["name"])
+            if m.get("name") == "현금":
+                cash_changes.append(m.get("diff", 0))
+
+    # Determine market stance
+    if cash_changes:
+        avg_cash = sum(cash_changes) / len(cash_changes)
+        if avg_cash > 0.3:
+            lines.append("• 방어적 포지션 전환 — 현금 비중 증가 추세")
+        elif avg_cash < -0.3:
+            lines.append("• 적극적 투자 확대 — 현금 비중 감소 추세")
+
+    # Sector rotation hints
+    all_movers = []
+    for news in per_etf_news:
+        all_movers.extend(news.get("movers", []))
+
+    # Extract key themes from judgments
+    themes = {"AI": 0, "반도체": 0, "바이오": 0, "실적": 0, "정책": 0}
+    for m in all_movers:
+        analysis = m.get("analysis", {})
+        if isinstance(analysis, dict):
+            jd = analysis.get("judgment", "")
+            causes = analysis.get("causes", [])
+            text = jd + " ".join(causes)
+            for theme in themes:
+                if theme in text:
+                    themes[theme] += 1
+
+    top_themes = sorted(themes.items(), key=lambda x: x[1], reverse=True)[:2]
+    if top_themes[0][1] > 0:
+        theme_str = ", ".join([t[0] for t in top_themes if t[1] > 0])
+        lines.append(f"• 주요 테마: {theme_str} 섹터 중심 리밸런싱")
+
+    # New additions summary
+    if all_new:
+        lines.append(f"• 신규편입 종목: {len(all_new)}개 — 포트폴리오 다변화 진행")
+
+    # Final conclusion
+    lines.append("")
+    if total_ups > total_downs * 1.5:
+        lines.append("💡 결론: 전반적 비중 확대 기조 — 시장 상승 기대감 반영")
+    elif total_downs > total_ups * 1.5:
+        lines.append("💡 결론: 전반적 비중 축소 기조 — 리스크 관리 강화")
+    else:
+        lines.append("💡 결론: 섹터별 선별적 리밸런싱 — 차별화 전략 유지")
+
+    return "\n".join(lines)
+
+
 # ─── Main ─────────────────────────────────────────────────────────────
 def run(etf_keys=None, generate_images=True):
     """Returns (text_report, [image_paths])."""
@@ -1309,27 +1414,42 @@ def run(etf_keys=None, generate_images=True):
 
     report = build_text_report(group_label, date, per_etf_changes,
                                 etf_sections, all_movers_news, errors)
-    return report, image_paths
+
+    # Build analysis summary for Telegram
+    analysis_summary = build_analysis_summary(group_label, date,
+                                               per_etf_changes, per_etf_news)
+
+    return report, image_paths, analysis_summary
 
 
 if __name__ == "__main__":
     args = sys.argv[1:]
     if args == ["overseas"] or args == ["\ud574\uc678"]:
-        report, images = run(OVERSEAS_KEYS)
+        report, images, summary = run(OVERSEAS_KEYS)
         print(report)
+        print("\n" + "=" * 40 + "\n")
+        print(summary)
         if images:
             print(f"\nImages: {', '.join(images)}")
     elif args == ["domestic"] or args == ["\uad6d\ub0b4"]:
-        report, images = run(DOMESTIC_KEYS)
+        report, images, summary = run(DOMESTIC_KEYS)
         print(report)
+        print("\n" + "=" * 40 + "\n")
+        print(summary)
         if images:
             print(f"\nImages: {', '.join(images)}")
     else:
         all_images = []
+        all_summaries = []
         for group_keys in [DOMESTIC_KEYS, OVERSEAS_KEYS]:
-            report, images = run(group_keys)
+            report, images, summary = run(group_keys)
             print(report)
             print()
             all_images.extend(images)
+            all_summaries.append(summary)
+        print("\n" + "=" * 40 + "\n")
+        for s in all_summaries:
+            print(s)
+            print()
         if all_images:
             print(f"\nAll Images: {', '.join(all_images)}")
