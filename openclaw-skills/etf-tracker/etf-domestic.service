@@ -1,8 +1,0 @@
-[Unit]
-Description=ETF Tracker 국내 실행
-
-[Service]
-Type=oneshot
-WorkingDirectory=/home/user/n8n-self-hosted/openclaw-skills/etf-tracker/scripts
-EnvironmentFile=/etc/etf-tracker.env
-ExecStart=/usr/bin/python3 /home/user/n8n-self-hosted/openclaw-skills/etf-tracker/scripts/run_etf_tracker.py domestic
